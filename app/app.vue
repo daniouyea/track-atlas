@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { basemaps } from '~/utils/basemaps'
 import { km } from '~/utils/format'
 
 const { state, filtered, years, types, byId, profileTracks, loadActivities, clearSelection, focus, loadReferenceFile } = useAtlas()
 const showImport = ref(false)
-const showStyle = ref(false)
+const showCompare = ref(false)
 const stravaNotice = ref('')
 
 // arrastrar un GPX/FIT al mapa para compararlo
@@ -14,6 +13,8 @@ function onDrop(e: DragEvent) {
   const file = e.dataTransfer?.files[0]
   if (file) loadReferenceFile(file)
 }
+// un error al soltar un fichero en el mapa se muestra en la ventana de comparación
+watch(() => state.compareError, (e) => { if (e) showCompare.value = true })
 
 onMounted(async () => {
   // vuelta del OAuth de Strava
@@ -43,24 +44,12 @@ function selectAllNear() {
     <aside class="sidebar">
       <header>
         <h1>Track Atlas</h1>
-        <button class="btn" @click="showImport = true">Importar</button>
+        <span class="actions">
+          <button class="btn" title="Comparar con una URL de Strava o un GPX" @click="showCompare = true">Comparar</button>
+          <button class="btn" @click="showImport = true">Importar</button>
+        </span>
       </header>
 
-      <div class="controls">
-        <select v-model="state.basemap" title="Mapa base">
-          <option v-for="b in basemaps" :key="b.id" :value="b.id">{{ b.name }}</option>
-        </select>
-        <label><input v-model="state.showHeat" type="checkbox"> Heatmap</label>
-        <button class="btn small" :class="{ active: showStyle }" title="Colores, grosores y opacidad del mapa" @click="showStyle = !showStyle">Estilo</button>
-        <label title="Radio de búsqueda al hacer clic en el mapa">
-          Radio
-          <select v-model.number="state.nearRadius">
-            <option v-for="r in [25, 50, 100, 250, 500]" :key="r" :value="r">{{ r }} m</option>
-          </select>
-        </label>
-      </div>
-
-      <StylePanel v-if="showStyle" />
       <p v-if="stravaNotice" class="notice" @click="stravaNotice = ''">{{ stravaNotice }}</p>
       <ComparePanel />
 
@@ -111,15 +100,17 @@ function selectAllNear() {
       @dragover.prevent="dragging = true" @dragleave.self="dragging = false" @drop.prevent="onDrop"
     >
       <AtlasMap />
+      <MapToolbar />
       <div v-if="dragging" class="drop-hint">Suelta el GPX / FIT para compararlo con tus actividades</div>
       <div v-if="profileTracks.length" class="profile-panel">
         <ElevationProfile />
       </div>
-      <div v-if="!state.near && state.loaded && state.activities.length" class="tip">
+      <div v-if="!state.near && !profileTracks.length && state.loaded && state.activities.length" class="tip">
         Clic en el mapa: ¿he pasado por aquí? · Clic en una actividad: superponer
       </div>
     </main>
 
     <ImportDialog v-if="showImport" @close="showImport = false" />
+    <CompareDialog v-if="showCompare" @close="showCompare = false" />
   </div>
 </template>

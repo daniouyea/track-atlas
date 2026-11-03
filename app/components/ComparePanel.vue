@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { km, meters } from '~/utils/format'
 
-const { state, byId, style, toggle, loadReferenceUrl, loadReferenceFile, clearReference } = useAtlas()
-const url = ref('')
+// resultados de la comparación; la entrada (URL / fichero) está en CompareDialog
+const { state, byId, style, toggle, clearReference } = useAtlas()
 
 const SOURCES: Record<string, string> = {
   'file': 'Fichero',
@@ -10,17 +10,6 @@ const SOURCES: Record<string, string> = {
   'strava-activity': 'Actividad de Strava',
   'strava-route': 'Ruta de Strava',
   'strava-segment': 'Segmento de Strava',
-}
-
-function submit() {
-  if (url.value.trim()) loadReferenceUrl(url.value.trim())
-}
-
-function pickFile(e: Event) {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-  if (file) loadReferenceFile(file)
 }
 
 const cmp = computed(() => state.comparison)
@@ -36,27 +25,7 @@ function overlayTop(n: number) {
 </script>
 
 <template>
-  <section class="compare">
-    <form v-if="!state.reference" class="row" @submit.prevent="submit">
-      <input v-model="url" type="url" placeholder="URL de Strava: actividad, ruta o segmento" :disabled="state.compareBusy">
-      <button class="btn" :disabled="state.compareBusy || !url.trim()">Comparar</button>
-    </form>
-    <p v-if="!state.reference" class="hint">
-      o <label class="link">elige un GPX/FIT<input type="file" accept=".gpx,.tcx,.fit,.gz" hidden @change="pickFile"></label>
-      (también puedes soltarlo en el mapa)
-    </p>
-
-    <p v-if="state.compareBusy" class="hint">Cargando y comparando…</p>
-    <div v-if="state.compareError" class="error">
-      {{ state.compareError.message }}
-      <template v-if="state.compareError.exportUrl">
-        <br><a :href="state.compareError.exportUrl" target="_blank" rel="noopener">Descargar GPX desde Strava</a> y suéltalo en el mapa.
-      </template>
-      <template v-if="state.compareError.needsStrava && state.compareError.configured">
-        <br><a href="/api/strava/connect">Conectar con Strava</a>
-      </template>
-    </div>
-
+  <section v-if="state.reference" class="compare">
     <template v-if="state.reference">
       <div class="ref-head">
         <div class="ref-name">
@@ -103,10 +72,8 @@ function overlayTop(n: number) {
 <style scoped>
 .compare { padding: 8px 12px; border-bottom: 2px solid #c026d333; display: flex; flex-direction: column; gap: 6px; }
 .row { display: flex; gap: 6px; align-items: center; }
-.row input { flex: 1; min-width: 0; padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 6px; }
 .small { font-size: 12px; justify-content: space-between; }
 .hint { margin: 0; font-size: 12px; color: #6b7280; }
-.error { font-size: 12px; color: #dc2626; }
 .ref-head { display: flex; justify-content: space-between; gap: 8px; }
 .ref-name { font-weight: 600; min-width: 0; }
 .ref-name a { color: inherit; }
