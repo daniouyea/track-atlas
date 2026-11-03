@@ -1,20 +1,23 @@
+# Producción (Coolify). En local, docker compose añade automáticamente
+# docker-compose.override.yml con la configuración de desarrollo.
 services:
   app:
     build:
       context: .
-      target: dev
-    ports:
-      - "127.0.0.1:3210:3000"
+      target: prod
     environment:
       DATA_DIR: /data
-      # se leen del fichero .env (ver .env.example)
       STRAVA_CLIENT_ID: ${STRAVA_CLIENT_ID:-}
       STRAVA_CLIENT_SECRET: ${STRAVA_CLIENT_SECRET:-}
       SESSION_SECRET: ${SESSION_SECRET:-}
     volumes:
-      - .:/app
-      - node_modules:/app/node_modules
-      - ./data:/data
+      - atlas-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/auth/me').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
 
 volumes:
-  node_modules:
+  atlas-data:

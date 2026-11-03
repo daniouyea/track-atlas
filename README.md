@@ -15,6 +15,9 @@ docker compose up -d        # http://localhost:3210
 docker compose logs -f
 ```
 
+`docker-compose.yml` es la configuración de **producción**; en local Docker Compose le añade
+automáticamente `docker-compose.override.yml` (target `dev`, código montado, puerto 3210, `./data`).
+
 ## Importar datos
 
 1. Strava → Ajustes → Mi cuenta → *Descargar o eliminar tu cuenta* → «Solicitar archivo».
@@ -45,10 +48,10 @@ y qué actividades tuyas coinciden más.
 
 ## Producción (Coolify)
 
-`Dockerfile` con target `prod` (por defecto, último stage). Escucha en el puerto 3000.
-Montar un volumen persistente en `/data` (base de datos SQLite e importaciones).
-Variables: `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `SESSION_SECRET`. Añadir el dominio en la
-*Authorization Callback Domain* de la app de Strava.
+Build pack *Docker Compose* con `docker-compose.yml` (Coolify ignora el override de desarrollo):
+target `prod`, puerto 3000, volumen persistente `atlas-data` en `/data` y healthcheck.
+Variables: `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `SESSION_SECRET`. En la app de Strava,
+*Authorization Callback Domain* = el dominio de producción (`localhost` ya está permitido siempre).
 
 ## Estructura
 

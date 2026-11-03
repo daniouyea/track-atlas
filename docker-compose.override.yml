@@ -1,0 +1,17 @@
+# Desarrollo local: se combina automáticamente con docker-compose.yml al hacer `docker compose up`.
+# Coolify solo usa docker-compose.yml.
+services:
+  app:
+    build:
+      target: dev
+    ports:
+      - "127.0.0.1:3210:3000"
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+      - ./data:/data
+    healthcheck:
+      disable: true
+
+volumes:
+  node_modules:
