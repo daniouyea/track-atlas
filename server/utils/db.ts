@@ -47,6 +47,11 @@ export function useDb() {
       PRIMARY KEY (cell, activity_id)
     ) WITHOUT ROWID;
     CREATE INDEX IF NOT EXISTS cells_activity ON cells(activity_id);
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `)
   return db
 }
@@ -68,4 +73,14 @@ export function transaction<T>(fn: () => T): T {
 export function dataVersion(): string {
   const row = useDb().prepare('SELECT COUNT(*) AS n, MAX(imported_at) AS last FROM activities').get() as { n: number, last: string | null }
   return `${row.n}-${row.last ?? ''}`
+}
+
+export function getSetting<T>(key: string): T | undefined {
+  const row = useDb().prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
+  return row ? JSON.parse(row.value) as T : undefined
+}
+
+export function setSetting(key: string, value: unknown) {
+  if (value === undefined) useDb().prepare('DELETE FROM settings WHERE key = ?').run(key)
+  else useDb().prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, JSON.stringify(value))
 }
