@@ -119,13 +119,16 @@ export interface ImportResult {
   errors: { file: string, error: string }[]
 }
 
-/** Progreso de la importación en curso, para mostrarlo en la interfaz. */
-export const importProgress = { running: false, done: 0, total: 0 }
+interface Progress { running: boolean, done: number, total: number }
+const progress = new Map<number, Progress>()
 
-export async function importStravaExport(path: string, opts: { force?: boolean } = {}): Promise<ImportResult> {
-  importProgress.running = true
-  importProgress.done = importProgress.total = 0
-  const src = await openSource(path).catch((e) => { importProgress.running = false; throw e })
+/** Progreso de la importación en curso del usuario, para mostrarlo en la interfaz. */
+export const importProgress = (userId: number): Progress => progress.get(userId) ?? { running: false, done: 0, total: 0 }
+
+export async function importStravaExport(userId: number, path: string, opts: { force?: boolean } = {}): Promise<ImportResult> {
+  const p: Progress = { running: true, done: 0, total: 0 }
+  progress.set(userId, p)
+  const src = await openSource(path).catch((e) => { p.running = false; throw e })
   const result: ImportResult = { imported: 0, unchanged: 0, skipped: [], errors: [] }
   try {
     // el ZIP puede venir con una carpeta raíz: localizamos activities.csv donde esté
@@ -143,20 +146,27 @@ export async function importStravaExport(path: string, opts: { force?: boolean }
 
     const fileSet = new Set(src.files)
     const db = useDb()
-    const existing = new Set((db.prepare('SELECT id FROM activities').all() as { id: string }[]).map(r => r.id))
+    const existing = new Set((db.prepare('SELECT id FROM activities WHERE user_id = ?').all(userId) as { id: string }[]).map(r => r.id))
+    // UPSERT (no INSERT OR REPLACE: el REPLACE borraría en cascada el track y las celdas)
     const upsertActivity = db.prepare(`
-      INSERT OR REPLACE INTO activities
-        (id, name, type, start_time, distance_m, moving_time_s, elapsed_time_s, elevation_gain_m,
+      INSERT INTO activities
+        (user_id, id, name, type, start_time, distance_m, moving_time_s, elapsed_time_s, elevation_gain_m,
          description, gear, min_lng, min_lat, max_lng, max_lat, source_file, imported_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    const upsertTrack = db.prepare('INSERT OR REPLACE INTO tracks (activity_id, detail, overview) VALUES (?, ?, ?)')
-    const deleteCells = db.prepare('DELETE FROM cells WHERE activity_id = ?')
-    const insertCell = db.prepare('INSERT OR IGNORE INTO cells (cell, activity_id) VALUES (?, ?)')
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, id) DO UPDATE SET
+        name = excluded.name, type = excluded.type, start_time = excluded.start_time, distance_m = excluded.distance_m,
+        moving_time_s = excluded.moving_time_s, elapsed_time_s = excluded.elapsed_time_s,
+        elevation_gain_m = excluded.elevation_gain_m, description = excluded.description, gear = excluded.gear,
+        min_lng = excluded.min_lng, min_lat = excluded.min_lat, max_lng = excluded.max_lng, max_lat = excluded.max_lat,
+        source_file = excluded.source_file, imported_at = excluded.imported_at`)
+    const upsertTrack = db.prepare('INSERT OR REPLACE INTO tracks (user_id, activity_id, detail, overview) VALUES (?, ?, ?, ?)')
+    const deleteCells = db.prepare('DELETE FROM cells WHERE user_id = ? AND activity_id = ?')
+    const insertCell = db.prepare('INSERT OR IGNORE INTO cells (user_id, cell, activity_id) VALUES (?, ?, ?)')
     const now = new Date().toISOString()
 
-    importProgress.total = items.length
+    p.total = items.length
     for (const a of items) {
-      importProgress.done++
+      p.done++
       // reimportar solo lo nuevo: procesar los ficheros es lo que más tarda
       if (existing.has(a.id) && !opts.force) { result.unchanged++; continue }
       if (!a.filename) { result.skipped.push({ id: a.id, reason: 'sin fichero GPS' }); continue }
@@ -169,16 +179,16 @@ export async function importStravaExport(path: string, opts: { force?: boolean }
         const startTime = track.startTime ?? (a.date && !Number.isNaN(Date.parse(a.date)) ? new Date(a.date).toISOString() : null)
         transaction(() => {
           upsertActivity.run(
-            a.id, a.name ?? parsed.name ?? `Actividad ${a.id}`, a.type ?? null, startTime,
+            userId, a.id, a.name ?? parsed.name ?? `Actividad ${a.id}`, a.type ?? null, startTime,
             Math.round(track.distanceM),
             a.movingTimeS ?? track.movingTimeS, a.elapsedTimeS ?? track.elapsedTimeS,
             a.elevationGainM ?? track.elevationGainM,
             a.description ?? null, a.gear ?? null,
             ...track.bbox, file, now,
           )
-          upsertTrack.run(a.id, JSON.stringify(track.detail), JSON.stringify(track.overview))
-          deleteCells.run(a.id)
-          for (const c of trackCells(track.detail)) insertCell.run(c, a.id)
+          upsertTrack.run(userId, a.id, JSON.stringify(track.detail), JSON.stringify(track.overview))
+          deleteCells.run(userId, a.id)
+          for (const c of trackCells(track.detail)) insertCell.run(userId, c, a.id)
         })
         result.imported++
       } catch (e) {
@@ -187,7 +197,7 @@ export async function importStravaExport(path: string, opts: { force?: boolean }
     }
   } finally {
     src.close()
-    importProgress.running = false
+    p.running = false
   }
   return result
 }

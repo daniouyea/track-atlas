@@ -50,9 +50,9 @@ export interface Comparison {
 export interface CompareError {
   message: string
   exportUrl?: string
-  needsStrava?: boolean
-  configured?: boolean
 }
+
+export interface User { id: number, firstname: string | null, lastname: string | null, avatar: string | null }
 
 /** pista que el perfil de elevación y el marcador del mapa tratan igual */
 export interface ProfileTrack { id: string, name: string, color: string, detail: DetailPoint[], dashed?: boolean }
@@ -73,6 +73,9 @@ function loadJson<T>(key: string, fallback: T): T {
 const prefs = loadJson(PREFS_KEY, { basemap: 'liberty', showHeat: true, nearRadius: 100, compareTolerance: 30 })
 
 const state = reactive({
+  /** null: sin sesión; undefined: aún comprobando */
+  user: undefined as User | null | undefined,
+  stravaConfigured: true,
   activities: [] as Activity[],
   loaded: false,
   /** ids seleccionados, en orden de selección */
@@ -130,6 +133,18 @@ const filtered = computed(() => {
 
 const years = computed(() => [...new Set(state.activities.map(a => a.startTime?.slice(0, 4)).filter(Boolean))].sort().reverse() as string[])
 const types = computed(() => [...new Set(state.activities.map(a => a.type).filter(Boolean))].sort() as string[])
+
+async function loadMe() {
+  const me = await $fetch<{ user: User | null, stravaConfigured: boolean }>('/api/auth/me')
+  state.user = me.user
+  state.stravaConfigured = me.stravaConfigured
+  return me.user
+}
+
+async function logout() {
+  await $fetch('/api/auth/logout', { method: 'POST' })
+  location.href = '/'
+}
 
 async function loadActivities() {
   state.activities = await $fetch<Activity[]>('/api/activities')
@@ -244,7 +259,7 @@ async function afterImport() {
 export function useAtlas() {
   return {
     state, details, byId, filtered, years, types, style, profileTracks,
-    loadActivities, loadDetail, toggle, focus, setColor, clearSelection, searchNear, afterImport,
+    loadMe, logout, loadActivities, loadDetail, toggle, focus, setColor, clearSelection, searchNear, afterImport,
     setStyle, resetStyle, loadReferenceUrl, loadReferenceFile, runComparison, clearReference,
   }
 }

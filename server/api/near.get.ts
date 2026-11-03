@@ -1,5 +1,6 @@
 import { useDb } from '../utils/db'
 import { cellsAround, nearestOnTrack, type DetailPoint } from '../utils/geo'
+import { userId } from '../utils/auth'
 
 // "¿He pasado por aquí?": actividades cuya traza pasa a menos de r metros del punto.
 export default defineEventHandler((event) => {
@@ -13,9 +14,9 @@ export default defineEventHandler((event) => {
   const cells = cellsAround(lng, lat, r)
   const candidates = db.prepare(`
     SELECT DISTINCT c.activity_id AS id, t.detail
-    FROM cells c JOIN tracks t ON t.activity_id = c.activity_id
-    WHERE c.cell IN (SELECT value FROM json_each(?))
-  `).all(JSON.stringify(cells)) as { id: string, detail: string }[]
+    FROM cells c JOIN tracks t ON t.user_id = c.user_id AND t.activity_id = c.activity_id
+    WHERE c.user_id = ? AND c.cell IN (SELECT value FROM json_each(?))
+  `).all(userId(event), JSON.stringify(cells)) as { id: string, detail: string }[]
 
   return candidates
     .map((c) => {

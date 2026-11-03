@@ -48,9 +48,6 @@ function close() {
         <template v-if="state.compareError.exportUrl">
           <br><a :href="state.compareError.exportUrl" target="_blank" rel="noopener">Descargar el GPX desde Strava</a> y elígelo aquí o suéltalo en el mapa.
         </template>
-        <template v-if="state.compareError.needsStrava && state.compareError.configured">
-          <br><a href="/api/strava/connect">Conectar con Strava</a>
-        </template>
       </div>
 
       <div class="footer"><button class="btn" @click="close">Cerrar</button></div>

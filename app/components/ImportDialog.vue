@@ -1,6 +1,6 @@
 <script setup lang="ts">
 const emit = defineEmits<{ close: [] }>()
-const { afterImport } = useAtlas()
+const { state, afterImport } = useAtlas()
 
 interface ImportResult {
   source?: string
@@ -82,7 +82,7 @@ const importLocal = () => run(() => $fetch<ImportResult[]>('/api/import/local', 
         <input type="file" accept=".zip" hidden :disabled="busy" @change="upload">
       </label>
       <p class="hint">
-        ¿ZIP muy grande? Cópialo (o descomprimido) en <code>data/import/</code> y
+        ¿ZIP muy grande? Cópialo (o descomprimido) en <code>data/import/{{ state.user?.id }}/</code> y
         <button class="link" :disabled="busy" @click="importLocal">importa desde la carpeta</button>.
       </p>
 

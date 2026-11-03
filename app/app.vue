@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { km } from '~/utils/format'
 
-const { state, filtered, years, types, byId, profileTracks, loadActivities, clearSelection, focus, loadReferenceFile } = useAtlas()
+const { state, filtered, years, types, byId, profileTracks, loadMe, logout, loadActivities, clearSelection, focus, loadReferenceFile } = useAtlas()
 const showImport = ref(false)
 const showCompare = ref(false)
-const stravaNotice = ref('')
 
 // arrastrar un GPX/FIT al mapa para compararlo
 const dragging = ref(false)
@@ -17,12 +16,7 @@ function onDrop(e: DragEvent) {
 watch(() => state.compareError, (e) => { if (e) showCompare.value = true })
 
 onMounted(async () => {
-  // vuelta del OAuth de Strava
-  const params = new URLSearchParams(location.search)
-  if (params.has('strava')) {
-    stravaNotice.value = params.get('strava') === 'ok' ? 'Conectado con Strava. Ya puedes pegar URLs.' : `No se pudo conectar con Strava (${params.get('strava')})`
-    history.replaceState(null, '', location.pathname)
-  }
+  if (!(await loadMe())) return
   await loadActivities()
   if (!state.activities.length) showImport.value = true
   else focus(state.activities.map(a => a.id))
@@ -40,7 +34,9 @@ function selectAllNear() {
 </script>
 
 <template>
-  <div class="layout">
+  <div v-if="state.user === undefined" />
+  <LoginScreen v-else-if="!state.user" :strava-configured="state.stravaConfigured" />
+  <div v-else class="layout">
     <aside class="sidebar">
       <header>
         <h1>Track Atlas</h1>
@@ -49,8 +45,12 @@ function selectAllNear() {
           <button class="btn" @click="showImport = true">Importar</button>
         </span>
       </header>
+      <div class="user">
+        <img v-if="state.user.avatar" :src="state.user.avatar" alt="">
+        <span>{{ [state.user.firstname, state.user.lastname].filter(Boolean).join(' ') }}</span>
+        <button class="link" @click="logout">Salir</button>
+      </div>
 
-      <p v-if="stravaNotice" class="notice" @click="stravaNotice = ''">{{ stravaNotice }}</p>
       <ComparePanel />
 
       <section v-if="state.near" class="near">

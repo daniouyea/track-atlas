@@ -1,15 +1,16 @@
 import { useDb, dataVersion } from './db'
 import { cellKey, CELL_DEG, haversine, type DetailPoint } from './geo'
 
-// detalle parseado de mis actividades, cacheado mientras no cambien los datos
-let cache: { version: string, tracks: Map<string, DetailPoint[]> } | undefined
+// detalle parseado de las actividades de cada usuario, cacheado mientras no cambien sus datos
+const caches = new Map<number, { version: string, tracks: Map<string, DetailPoint[]> }>()
 
-function myTrack(id: string): DetailPoint[] {
-  const version = dataVersion()
-  if (cache?.version !== version) cache = { version, tracks: new Map() }
+function userTrack(userId: number, id: string): DetailPoint[] {
+  const version = dataVersion(userId)
+  let cache = caches.get(userId)
+  if (cache?.version !== version) caches.set(userId, cache = { version, tracks: new Map() })
   let t = cache.tracks.get(id)
   if (!t) {
-    const row = useDb().prepare('SELECT detail FROM tracks WHERE activity_id = ?').get(id) as { detail: string }
+    const row = useDb().prepare('SELECT detail FROM tracks WHERE user_id = ? AND activity_id = ?').get(userId, id) as { detail: string }
     t = JSON.parse(row.detail) as DetailPoint[]
     cache.tracks.set(id, t)
   }
@@ -29,7 +30,7 @@ interface Seg { id: string, ax: number, ay: number, bx: number, by: number }
  * Compara un track de referencia con todas mis actividades: qué tramos ya he recorrido
  * (a menos de `toleranceM`) y qué actividades comparten más recorrido con él.
  */
-export function compareTrack(ref: DetailPoint[], toleranceM = 30, excludeId?: string) {
+export function compareTrack(userId: number, ref: DetailPoint[], toleranceM = 30, excludeId?: string) {
   // proyección equirectangular local en metros
   const lat0 = ref[0]![1] * Math.PI / 180
   const kx = 111320 * Math.cos(lat0), ky = 110540
@@ -38,8 +39,8 @@ export function compareTrack(ref: DetailPoint[], toleranceM = 30, excludeId?: st
   const area = new Set<string>()
   for (const p of ref) for (const c of neighbours(cellKey(p[0], p[1]))) area.add(c)
 
-  const ids = (useDb().prepare(`SELECT DISTINCT activity_id AS id FROM cells WHERE cell IN (SELECT value FROM json_each(?))`)
-    .all(JSON.stringify([...area])) as { id: string }[]).map(r => r.id).filter(id => id !== excludeId)
+  const ids = (useDb().prepare(`SELECT DISTINCT activity_id AS id FROM cells WHERE user_id = ? AND cell IN (SELECT value FROM json_each(?))`)
+    .all(userId, JSON.stringify([...area])) as { id: string }[]).map(r => r.id).filter(id => id !== excludeId)
 
   // segmentos de mis tracks dentro de la zona, repartidos por celda
   const buckets = new Map<string, Seg[]>()
@@ -50,7 +51,7 @@ export function compareTrack(ref: DetailPoint[], toleranceM = 30, excludeId?: st
     b.push(s)
   }
   for (const id of ids) {
-    const t = myTrack(id)
+    const t = userTrack(userId, id)
     for (let i = 0; i + 1 < t.length; i++) {
       const a = t[i]!, b = t[i + 1]!
       const [ax, ay] = px(a), [bx, by] = px(b)

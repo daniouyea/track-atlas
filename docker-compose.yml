@@ -10,6 +10,7 @@ services:
       # se leen del fichero .env (ver .env.example)
       STRAVA_CLIENT_ID: ${STRAVA_CLIENT_ID:-}
       STRAVA_CLIENT_SECRET: ${STRAVA_CLIENT_SECRET:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
     volumes:
       - .:/app
       - node_modules:/app/node_modules

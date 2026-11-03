@@ -1,25 +1,26 @@
 import type { H3Event } from 'h3'
-import { getSetting, setSetting } from './db'
+import { useDb } from './db'
 
 // Credenciales de la app de API de Strava (https://www.strava.com/settings/api)
 const clientId = () => process.env.STRAVA_CLIENT_ID
 const clientSecret = () => process.env.STRAVA_CLIENT_SECRET
+// configurable para poder probar contra un Strava simulado
+const base = () => (process.env.STRAVA_BASE_URL || 'https://www.strava.com').replace(/\/$/, '')
+
 export const stravaConfigured = () => !!(clientId() && clientSecret())
 
-interface Tokens {
+export interface TokenResponse {
   access_token: string
   refresh_token: string
   expires_at: number
-  athlete?: { id: number, firstname?: string, lastname?: string }
+  athlete?: { id: number, firstname?: string, lastname?: string, profile_medium?: string }
 }
-
-export const stravaTokens = () => getSetting<Tokens>('strava_tokens')
 
 export function redirectUri(event: H3Event) {
-  return `${getRequestURL(event, { xForwardedHost: true, xForwardedProto: true }).origin}/api/strava/callback`
+  return `${getRequestURL(event, { xForwardedHost: true, xForwardedProto: true }).origin}/api/auth/callback`
 }
 
-export function authorizeUrl(event: H3Event) {
+export function authorizeUrl(event: H3Event, state: string) {
   const q = new URLSearchParams({
     client_id: clientId()!,
     redirect_uri: redirectUri(event),
@@ -27,39 +28,43 @@ export function authorizeUrl(event: H3Event) {
     approval_prompt: 'auto',
     // read_all: rutas privadas; activity:read_all: actividades «solo yo»
     scope: 'read,read_all,activity:read_all',
+    state,
   })
-  return `https://www.strava.com/oauth/authorize?${q}`
+  return `${base()}/oauth/authorize?${q}`
 }
 
-async function tokenRequest(params: Record<string, string>) {
-  const tokens = await $fetch<Tokens>('https://www.strava.com/oauth/token', {
-    method: 'POST',
-    body: { client_id: clientId(), client_secret: clientSecret(), ...params },
-  })
-  // la respuesta de refresh no trae athlete: se conserva el anterior
-  setSetting('strava_tokens', { ...tokens, athlete: tokens.athlete ?? stravaTokens()?.athlete })
-}
+const tokenRequest = (params: Record<string, string>) => $fetch<TokenResponse>(`${base()}/oauth/token`, {
+  method: 'POST',
+  body: { client_id: clientId(), client_secret: clientSecret(), ...params },
+})
 
 export const exchangeCode = (code: string) => tokenRequest({ code, grant_type: 'authorization_code' })
 
-async function accessToken() {
-  const t = stravaTokens()
-  if (!t) throw createError({ statusCode: 401, statusMessage: 'Strava no está conectado' })
-  if (t.expires_at - 60 < Date.now() / 1000) {
-    await tokenRequest({ refresh_token: t.refresh_token, grant_type: 'refresh_token' })
-  }
-  return stravaTokens()!.access_token
+const saveTokens = (userId: number, t: TokenResponse) => {
+  const { athlete: _, ...tokens } = t
+  useDb().prepare('UPDATE users SET tokens = ? WHERE id = ?').run(JSON.stringify(tokens), userId)
 }
 
-export async function stravaApi<T>(path: string, opts: { query?: Record<string, string>, responseType?: 'text' } = {}): Promise<T> {
+async function accessToken(userId: number) {
+  const row = useDb().prepare('SELECT tokens FROM users WHERE id = ?').get(userId) as { tokens: string | null } | undefined
+  let t = row?.tokens ? JSON.parse(row.tokens) as TokenResponse : undefined
+  if (!t) throw createError({ statusCode: 401, statusMessage: 'Sesión de Strava no válida: vuelve a entrar' })
+  if (t.expires_at - 60 < Date.now() / 1000) {
+    t = await tokenRequest({ refresh_token: t.refresh_token, grant_type: 'refresh_token' })
+    saveTokens(userId, t)
+  }
+  return t.access_token
+}
+
+export async function stravaApi<T>(userId: number, path: string, opts: { query?: Record<string, string>, responseType?: 'text' } = {}): Promise<T> {
   try {
-    return (await $fetch(`https://www.strava.com/api/v3${path}`, {
-      headers: { Authorization: `Bearer ${await accessToken()}` },
+    return (await $fetch(`${base()}/api/v3${path}`, {
+      headers: { Authorization: `Bearer ${await accessToken(userId)}` },
       query: opts.query,
       responseType: opts.responseType as any,
     })) as T
   } catch (e: any) {
-    if (e?.statusCode && e.statusCode !== 401) throw createError({ statusCode: e.statusCode, statusMessage: `Strava: ${e.statusMessage ?? e.message}` })
+    if (e?.statusCode) throw createError({ statusCode: e.statusCode, statusMessage: `Strava: ${e.statusMessage ?? e.message}` })
     throw e
   }
 }
