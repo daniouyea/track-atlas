@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 let db: DatabaseSync | undefined
@@ -9,9 +9,16 @@ export function dataDir() {
 }
 
 export function useDb() {
+  const file = join(dataDir(), 'atlas.sqlite')
+  // si el fichero desaparece con la conexión abierta, se seguiría escribiendo en un
+  // inodo borrado y los datos se perderían al reiniciar: se reabre
+  if (db && !existsSync(file)) {
+    db.close()
+    db = undefined
+  }
   if (db) return db
   mkdirSync(dataDir(), { recursive: true })
-  db = new DatabaseSync(join(dataDir(), 'atlas.sqlite'))
+  db = new DatabaseSync(file)
   db.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;

@@ -17,7 +17,7 @@ docker compose logs -f
 2. Sube el ZIP desde el botón **Importar**, o cópialo (ZIP o descomprimido) en `data/import/`
    y usa «importa desde la carpeta».
 
-Reimportar es seguro: las actividades se actualizan por id. Las que no tienen GPS (rodillo, manuales) se omiten.
+Reimportar es seguro y rápido: solo se procesan las actividades nuevas (opción para forzar todas). Las que no tienen GPS (rodillo, manuales) se omiten.
 
 ## Producción (Coolify)
 

@@ -113,13 +113,20 @@ const TRACK_RE = /\.(gpx|tcx|fit)(\.gz)?$/i
 
 export interface ImportResult {
   imported: number
+  /** ya estaban importadas y no se han vuelto a procesar */
+  unchanged: number
   skipped: { id: string, reason: string }[]
   errors: { file: string, error: string }[]
 }
 
-export async function importStravaExport(path: string, onProgress?: (done: number, total: number) => void): Promise<ImportResult> {
-  const src = await openSource(path)
-  const result: ImportResult = { imported: 0, skipped: [], errors: [] }
+/** Progreso de la importación en curso, para mostrarlo en la interfaz. */
+export const importProgress = { running: false, done: 0, total: 0 }
+
+export async function importStravaExport(path: string, opts: { force?: boolean } = {}): Promise<ImportResult> {
+  importProgress.running = true
+  importProgress.done = importProgress.total = 0
+  const src = await openSource(path).catch((e) => { importProgress.running = false; throw e })
+  const result: ImportResult = { imported: 0, unchanged: 0, skipped: [], errors: [] }
   try {
     // el ZIP puede venir con una carpeta raíz: localizamos activities.csv donde esté
     const csvPath = src.files.find(f => basename(f).toLowerCase() === 'activities.csv')
@@ -136,6 +143,7 @@ export async function importStravaExport(path: string, onProgress?: (done: numbe
 
     const fileSet = new Set(src.files)
     const db = useDb()
+    const existing = new Set((db.prepare('SELECT id FROM activities').all() as { id: string }[]).map(r => r.id))
     const upsertActivity = db.prepare(`
       INSERT OR REPLACE INTO activities
         (id, name, type, start_time, distance_m, moving_time_s, elapsed_time_s, elevation_gain_m,
@@ -146,9 +154,11 @@ export async function importStravaExport(path: string, onProgress?: (done: numbe
     const insertCell = db.prepare('INSERT OR IGNORE INTO cells (cell, activity_id) VALUES (?, ?)')
     const now = new Date().toISOString()
 
-    let done = 0
+    importProgress.total = items.length
     for (const a of items) {
-      onProgress?.(done++, items.length)
+      importProgress.done++
+      // reimportar solo lo nuevo: procesar los ficheros es lo que más tarda
+      if (existing.has(a.id) && !opts.force) { result.unchanged++; continue }
       if (!a.filename) { result.skipped.push({ id: a.id, reason: 'sin fichero GPS' }); continue }
       const file = fileSet.has(prefix + a.filename) ? prefix + a.filename : a.filename
       if (!fileSet.has(file)) { result.skipped.push({ id: a.id, reason: `no encontrado: ${a.filename}` }); continue }
@@ -175,9 +185,9 @@ export async function importStravaExport(path: string, onProgress?: (done: numbe
         result.errors.push({ file, error: e instanceof Error ? e.message : String(e) })
       }
     }
-    onProgress?.(items.length, items.length)
   } finally {
     src.close()
+    importProgress.running = false
   }
   return result
 }

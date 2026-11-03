@@ -5,6 +5,7 @@ const { afterImport } = useAtlas()
 interface ImportResult {
   source?: string
   imported: number
+  unchanged: number
   skipped: { id: string, reason: string }[]
   errors: { file: string, error: string }[]
 }
@@ -12,11 +13,19 @@ interface ImportResult {
 const busy = ref(false)
 const error = ref('')
 const results = ref<ImportResult[]>([])
+const force = ref(false)
+/** subida del ZIP (0-1) y procesado en el servidor */
+const uploaded = ref<number | null>(null)
+const processing = ref<{ done: number, total: number } | null>(null)
 
 async function run(fn: () => Promise<ImportResult | ImportResult[]>) {
   busy.value = true
   error.value = ''
   results.value = []
+  const timer = setInterval(async () => {
+    const p = await $fetch<{ running: boolean, done: number, total: number }>('/api/import/progress').catch(() => null)
+    if (p?.running && p.total) processing.value = p
+  }, 700)
   try {
     const r = await fn()
     results.value = Array.isArray(r) ? r : [r]
@@ -24,16 +33,38 @@ async function run(fn: () => Promise<ImportResult | ImportResult[]>) {
   } catch (e: any) {
     error.value = e?.data?.statusMessage ?? e?.message ?? String(e)
   } finally {
+    clearInterval(timer)
     busy.value = false
+    uploaded.value = null
+    processing.value = null
   }
 }
 
-function upload(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (file) run(() => $fetch<ImportResult>('/api/import', { method: 'POST', body: file, headers: { 'Content-Type': 'application/zip' } }))
+// XHR en vez de fetch para poder mostrar el progreso de subida (el ZIP puede pesar cientos de MB)
+function uploadZip(file: File) {
+  return new Promise<ImportResult>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `/api/import${force.value ? '?force=1' : ''}`)
+    xhr.setRequestHeader('Content-Type', 'application/zip')
+    xhr.upload.onprogress = e => { if (e.lengthComputable) uploaded.value = e.loaded / e.total }
+    xhr.onload = () => {
+      const body = JSON.parse(xhr.responseText || '{}')
+      if (xhr.status < 300) resolve(body)
+      else reject(new Error(body.statusMessage ?? `Error ${xhr.status}`))
+    }
+    xhr.onerror = () => reject(new Error('Error de red al subir el fichero'))
+    xhr.send(file)
+  })
 }
 
-const importLocal = () => run(() => $fetch<ImportResult[]>('/api/import-local', { method: 'POST' }))
+function upload(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (file) run(() => uploadZip(file))
+}
+
+const importLocal = () => run(() => $fetch<ImportResult[]>('/api/import/local', { method: 'POST', query: force.value ? { force: 1 } : {} }))
 </script>
 
 <template>
@@ -55,10 +86,23 @@ const importLocal = () => run(() => $fetch<ImportResult[]>('/api/import-local', 
         <button class="link" :disabled="busy" @click="importLocal">importa desde la carpeta</button>.
       </p>
 
-      <p v-if="busy" class="status">Importando… puede tardar un par de minutos.</p>
+      <label class="hint"><input v-model="force" type="checkbox" :disabled="busy"> Volver a procesar también las ya importadas</label>
+
+      <div v-if="busy" class="status">
+        <template v-if="processing">
+          Procesando actividades: {{ processing.done }} / {{ processing.total }}
+          <progress :value="processing.done" :max="processing.total" />
+        </template>
+        <template v-else-if="uploaded != null && uploaded < 1">
+          Subiendo ZIP: {{ Math.round(uploaded * 100) }} %
+          <progress :value="uploaded" max="1" />
+        </template>
+        <template v-else>Leyendo el ZIP…</template>
+      </div>
       <p v-if="error" class="error">{{ error }}</p>
       <div v-for="(r, i) in results" :key="i" class="result">
         <strong>{{ r.source ? `${r.source}: ` : '' }}{{ r.imported }} importadas</strong>
+        <span v-if="r.unchanged">, {{ r.unchanged }} ya estaban</span>
         <span v-if="r.skipped.length">, {{ r.skipped.length }} sin GPS u omitidas</span>
         <span v-if="r.errors.length" class="error">, {{ r.errors.length }} con error</span>
         <details v-if="r.errors.length || r.skipped.length">
@@ -82,7 +126,9 @@ h2 { margin: 0 0 8px; font-size: 18px; }
 ol { padding-left: 20px; line-height: 1.5; font-size: 14px; }
 .hint { font-size: 13px; color: #6b7280; }
 .link { border: 0; background: none; color: #fc4c02; cursor: pointer; padding: 0; font: inherit; text-decoration: underline; }
-.status { color: #1f78ff; }
+.status { color: #1f78ff; margin: 10px 0; }
+progress { display: block; width: 100%; margin-top: 4px; }
+label.hint { display: block; margin: 6px 0; }
 .error { color: #dc2626; }
 .result { font-size: 14px; margin-top: 8px; }
 details { font-size: 12px; max-height: 200px; overflow: auto; }

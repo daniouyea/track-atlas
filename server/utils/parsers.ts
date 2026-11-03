@@ -1,6 +1,4 @@
 import { gunzipSync } from 'node:zlib'
-import { DOMParser } from '@xmldom/xmldom'
-import { gpx, tcx } from '@tmcw/togeojson'
 import FitParser from 'fit-file-parser'
 import type { RawPoint } from './geo'
 
@@ -21,30 +19,58 @@ export async function parseTrackFile(filename: string, buf: Buffer): Promise<Par
   throw new Error(`Formato no soportado: ${filename}`)
 }
 
+// GPX y TCX tienen una estructura muy simple: se leen con expresiones regulares.
+// Un DOM completo (xmldom + togeojson) tardaba ~0,9 s por actividad; esto, unos pocos ms.
+const decode = (v: string) => v
+  .replace(/^<!\[CDATA\[([\s\S]*)\]\]>$/, '$1')
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+  .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+  .replace(/&amp;/g, '&')
+  .trim()
+
+const regexps = new Map<string, RegExp>()
+const re = (key: string, src: () => string) => regexps.get(key) ?? regexps.set(key, new RegExp(src())).get(key)!
+
+const tag = (xml: string, name: string) => {
+  const m = xml.match(re(`t:${name}`, () => `<(?:\\w+:)?${name}\\b[^>]*>([\\s\\S]*?)</(?:\\w+:)?${name}>`))
+  return m ? decode(m[1]!) : undefined
+}
+const attr = (attrs: string, name: string) => attrs.match(re(`a:${name}`, () => `\\b${name}\\s*=\\s*["']([^"']*)["']`))?.[1]
+const num = (v?: string) => (v == null || v === '' ? undefined : Number(v))
+const time = (v?: string) => {
+  const t = v ? Date.parse(v) : NaN
+  return Number.isFinite(t) ? t : undefined
+}
+
 function parseXml(buf: Buffer, kind: 'gpx' | 'tcx'): ParsedFile {
-  // algunos ficheros de Strava traen espacios/BOM antes de la cabecera XML
-  const text = buf.toString('utf8').replace(/^﻿?\s+/, '')
-  const doc = new DOMParser().parseFromString(text, 'text/xml')
-  const fc = (kind === 'gpx' ? gpx : tcx)(doc as unknown as Document)
+  const xml = buf.toString('utf8')
   const points: RawPoint[] = []
-  let name: string | undefined
-  for (const f of fc.features) {
-    if (!f.geometry) continue
-    name ??= (f.properties as Record<string, unknown> | null)?.name as string | undefined
-    const times = (f.properties as any)?.coordinateProperties?.times
-    const lines = f.geometry.type === 'LineString'
-      ? [f.geometry.coordinates]
-      : f.geometry.type === 'MultiLineString' ? f.geometry.coordinates : []
-    lines.forEach((line, li) => {
-      // times es string[] para LineString y string[][] para MultiLineString
-      const lineTimes: (string | null)[] | undefined = Array.isArray(times?.[0]) ? times[li] : times
-      line.forEach((c, i) => {
-        const t = lineTimes?.[i] ? Date.parse(lineTimes[i]!) : undefined
-        points.push({ lng: c[0]!, lat: c[1]!, ele: c[2], t: Number.isFinite(t) ? t : undefined })
+  if (kind === 'gpx') {
+    // trkpt en actividades, rtept en rutas
+    for (const m of xml.matchAll(/<(?:\w+:)?(trkpt|rtept)\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:\w+:)?\1>)/g)) {
+      const inner = m[3] ?? ''
+      points.push({
+        lat: Number(attr(m[2]!, 'lat')),
+        lng: Number(attr(m[2]!, 'lon')),
+        ele: num(tag(inner, 'ele')),
+        t: time(tag(inner, 'time')),
       })
+    }
+    const head = xml.match(/<(?:\w+:)?(?:trk|rte)\b[^>]*>([\s\S]*?)<(?:\w+:)?(?:trkseg|trkpt|rtept)\b/)?.[1]
+    return { points, name: (head && tag(head, 'name')) || tag(xml.split(/<(?:\w+:)?(?:trk|rte)\b/)[0]!, 'name') }
+  }
+  for (const m of xml.matchAll(/<(?:\w+:)?Trackpoint\b[^>]*>([\s\S]*?)<\/(?:\w+:)?Trackpoint>/g)) {
+    const inner = m[1]!
+    const lat = tag(inner, 'LatitudeDegrees')
+    if (lat == null) continue // puntos sin posición (pausas, sensores)
+    points.push({
+      lat: Number(lat),
+      lng: Number(tag(inner, 'LongitudeDegrees')),
+      ele: num(tag(inner, 'AltitudeMeters')),
+      t: time(tag(inner, 'Time')),
     })
   }
-  return { points, name }
+  return { points, name: tag(xml, 'Notes') }
 }
 
 async function parseFit(buf: Buffer): Promise<ParsedFile> {
