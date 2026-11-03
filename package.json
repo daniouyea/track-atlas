@@ -1,0 +1,25 @@
+{
+  "name": "track-atlas",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "start": "node .output/server/index.mjs",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@tmcw/togeojson": "^7.1.3",
+    "@xmldom/xmldom": "^0.9.12",
+    "csv-parse": "^7.0.3",
+    "fit-file-parser": "^6.2.7",
+    "maplibre-gl": "^6.16.0",
+    "nuxt": "^4.6.4",
+    "vue": "^3.5.44",
+    "vue-router": "^5.4.0",
+    "yauzl": "^3.4.0"
+  },
+  "devDependencies": {
+    "@types/yauzl": "^3.4.0"
+  }
+}
