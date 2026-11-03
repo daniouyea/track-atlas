@@ -53,11 +53,11 @@ async function accessToken() {
 
 export async function stravaApi<T>(path: string, opts: { query?: Record<string, string>, responseType?: 'text' } = {}): Promise<T> {
   try {
-    return await $fetch<T>(`https://www.strava.com/api/v3${path}`, {
+    return (await $fetch(`https://www.strava.com/api/v3${path}`, {
       headers: { Authorization: `Bearer ${await accessToken()}` },
       query: opts.query,
       responseType: opts.responseType as any,
-    })
+    })) as T
   } catch (e: any) {
     if (e?.statusCode && e.statusCode !== 401) throw createError({ statusCode: e.statusCode, statusMessage: `Strava: ${e.statusMessage ?? e.message}` })
     throw e

@@ -103,7 +103,8 @@ export function compareTrack(ref: DetailPoint[], toleranceM = 30, excludeId?: st
   }
 
   const totalM = ref.at(-1)![3] || 1
-  const minOverlap = Math.min(200, totalM * 0.02)
+  // cruzarse con un track no es «coincidir»: hace falta compartir un tramo apreciable
+  const minOverlap = Math.min(1000, totalM * 0.1)
   return {
     toleranceM,
     totalM,

@@ -1,5 +1,6 @@
-import { reactive, computed, shallowReactive } from 'vue'
+import { reactive, computed, shallowReactive, watch } from 'vue'
 import { PALETTE } from '~/utils/format'
+import { defaultStyle, type TrackStyle } from '~/utils/styles'
 
 export interface Activity {
   id: string
@@ -24,6 +25,53 @@ export interface ActivityDetail extends Activity {
 
 export interface NearResult { id: string, distanceM: number, atDistanceM: number }
 
+type BBox = [number, number, number, number]
+
+/** Track externo con el que comparar (fichero o URL de Strava) */
+export interface RefTrack {
+  name: string
+  source: 'file' | 'mine' | 'strava-activity' | 'strava-route' | 'strava-segment'
+  url?: string
+  activityId?: string
+  detail: DetailPoint[]
+  distanceM: number
+  elevationGainM: number
+  bbox: BBox
+}
+
+export interface Comparison {
+  toleranceM: number
+  totalM: number
+  coveredM: number
+  segments: GeoJSON.FeatureCollection<GeoJSON.LineString, { known: boolean, lengthM: number }>
+  matches: { id: string, overlapM: number, pct: number }[]
+}
+
+export interface CompareError {
+  message: string
+  exportUrl?: string
+  needsStrava?: boolean
+  configured?: boolean
+}
+
+/** pista que el perfil de elevación y el marcador del mapa tratan igual */
+export interface ProfileTrack { id: string, name: string, color: string, detail: DetailPoint[], dashed?: boolean }
+
+export const REF_ID = '__ref'
+const STYLE_KEY = 'track-atlas:styles'
+const PREFS_KEY = 'track-atlas:prefs'
+
+function loadJson<T>(key: string, fallback: T): T {
+  try {
+    return { ...fallback, ...JSON.parse(localStorage.getItem(key) ?? '{}') }
+  } catch {
+    return fallback
+  }
+}
+
+// preferencias que se recuerdan entre visitas
+const prefs = loadJson(PREFS_KEY, { basemap: 'liberty', showHeat: true, nearRadius: 100, compareTolerance: 30 })
+
 const state = reactive({
   activities: [] as Activity[],
   loaded: false,
@@ -31,17 +79,41 @@ const state = reactive({
   selected: [] as string[],
   colors: {} as Record<string, string>,
   filters: { q: '', year: '', type: '' },
-  showHeat: true,
-  basemap: 'liberty',
-  nearRadius: 100,
+  showHeat: prefs.showHeat,
+  basemap: prefs.basemap,
+  nearRadius: prefs.nearRadius,
   near: null as null | { lng: number, lat: number, r: number, results: NearResult[], loading: boolean },
   /** punto resaltado desde el perfil de elevación: distancia recorrida (m) */
   hoverDistance: null as number | null,
   /** sube cada vez que se importan datos, para recargar trazas */
   dataVersion: 0,
   /** petición de encuadre para el mapa */
-  fitRequest: null as null | { ids: string[] },
+  fitRequest: null as null | { bboxes: BBox[] },
+  reference: null as RefTrack | null,
+  comparison: null as Comparison | null,
+  compareTolerance: prefs.compareTolerance,
+  compareBusy: false,
+  compareError: null as CompareError | null,
+  /** ajustes de estilo por mapa base (solo lo que difiere de los valores por defecto) */
+  styleOverrides: loadJson<Record<string, Partial<TrackStyle>>>(STYLE_KEY, {}),
 })
+
+watch(() => state.styleOverrides, v => localStorage.setItem(STYLE_KEY, JSON.stringify(v)), { deep: true })
+watch(
+  () => ({ basemap: state.basemap, showHeat: state.showHeat, nearRadius: state.nearRadius, compareTolerance: state.compareTolerance }),
+  v => localStorage.setItem(PREFS_KEY, JSON.stringify(v)),
+)
+
+/** estilo efectivo para el mapa base actual */
+const style = computed<TrackStyle>(() => ({ ...defaultStyle(state.basemap), ...state.styleOverrides[state.basemap] }))
+
+function setStyle(patch: Partial<TrackStyle>) {
+  state.styleOverrides[state.basemap] = { ...state.styleOverrides[state.basemap], ...patch }
+}
+
+function resetStyle() {
+  delete state.styleOverrides[state.basemap]
+}
 
 const details = shallowReactive<Record<string, ActivityDetail>>({})
 
@@ -84,7 +156,66 @@ async function toggle(id: string) {
 }
 
 function focus(ids: string[]) {
-  state.fitRequest = { ids }
+  state.fitRequest = { bboxes: ids.map(id => byId.value.get(id)?.bbox).filter(Boolean) as BBox[] }
+}
+
+function setColor(id: string, color: string) {
+  state.colors[id] = color
+}
+
+const profileTracks = computed<ProfileTrack[]>(() => {
+  const tracks: ProfileTrack[] = state.selected
+    .filter(id => details[id])
+    .map(id => ({ id, name: details[id]!.name, color: state.colors[id]!, detail: details[id]!.detail }))
+  if (state.reference) tracks.unshift({ id: REF_ID, name: state.reference.name, color: '#111', detail: state.reference.detail, dashed: true })
+  return tracks
+})
+
+// --- comparar un track externo con mis actividades ---
+
+function toCompareError(e: any): CompareError {
+  const d = e?.data
+  return { message: d?.statusMessage ?? d?.message ?? e?.message ?? String(e), ...d?.data }
+}
+
+async function setReference(load: () => Promise<RefTrack>) {
+  state.compareBusy = true
+  state.compareError = null
+  try {
+    state.reference = await load()
+    state.comparison = null
+    state.fitRequest = { bboxes: [state.reference.bbox] }
+    await runComparison()
+  } catch (e) {
+    state.compareError = toCompareError(e)
+  } finally {
+    state.compareBusy = false
+  }
+}
+
+const loadReferenceUrl = (url: string) =>
+  setReference(() => $fetch<RefTrack>('/api/reference/strava', { method: 'POST', body: { url } }))
+
+const loadReferenceFile = (file: File) =>
+  setReference(() => $fetch<RefTrack>('/api/reference/file', {
+    method: 'POST', body: file, headers: { 'X-Filename': encodeURIComponent(file.name) },
+  }))
+
+async function runComparison() {
+  const ref = state.reference
+  if (!ref) return
+  const result = await $fetch<Comparison>('/api/compare', {
+    method: 'POST',
+    body: { detail: ref.detail, toleranceM: state.compareTolerance, excludeId: ref.activityId },
+  })
+  if (state.reference === ref) state.comparison = result
+}
+watch(() => state.compareTolerance, () => runComparison().catch(e => (state.compareError = toCompareError(e))))
+
+function clearReference() {
+  state.reference = null
+  state.comparison = null
+  state.compareError = null
 }
 
 function clearSelection() {
@@ -106,8 +237,14 @@ async function afterImport() {
   for (const k of Object.keys(details)) delete details[k]
   await loadActivities()
   state.dataVersion++
+  // hay actividades nuevas con las que comparar
+  runComparison().catch(() => {})
 }
 
 export function useAtlas() {
-  return { state, details, byId, filtered, years, types, loadActivities, loadDetail, toggle, focus, clearSelection, searchNear, afterImport }
+  return {
+    state, details, byId, filtered, years, types, style, profileTracks,
+    loadActivities, loadDetail, toggle, focus, setColor, clearSelection, searchNear, afterImport,
+    setStyle, resetStyle, loadReferenceUrl, loadReferenceFile, runComparison, clearReference,
+  }
 }

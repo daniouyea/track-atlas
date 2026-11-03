@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { DetailPoint } from '~/composables/useAtlas'
 
-const { state, details } = useAtlas()
+const { state, profileTracks } = useAtlas()
 const box = ref<HTMLDivElement>()
 const width = ref(600)
 const height = 150
@@ -14,8 +14,8 @@ onMounted(() => {
 })
 onBeforeUnmount(() => ro?.disconnect())
 
-const tracks = computed(() => state.selected
-  .map(id => ({ id, color: state.colors[id]!, name: details[id]?.name ?? '', pts: details[id]?.detail.filter(p => p[2] != null) ?? [] }))
+const tracks = computed(() => profileTracks.value
+  .map(t => ({ id: t.id, color: t.color, name: t.name, dashed: t.dashed, pts: t.detail.filter(p => p[2] != null) }))
   .filter(t => t.pts.length > 1))
 
 const domain = computed(() => {
@@ -38,7 +38,7 @@ const paths = computed(() => tracks.value.map((t) => {
   const step = Math.max(1, Math.floor(t.pts.length / (plotW.value * 2)))
   let d = ''
   for (let i = 0; i < t.pts.length; i += step) d += `${i ? 'L' : 'M'}${x(t.pts[i]![3]).toFixed(1)},${y(t.pts[i]![2]!).toFixed(1)}`
-  return { id: t.id, color: t.color, d }
+  return { id: t.id, color: t.color, dashed: t.dashed, d }
 }))
 
 const xTicks = computed(() => {
@@ -94,7 +94,7 @@ function onMove(e: MouseEvent) {
         <text v-for="e in yTicks" :key="'yt' + e" :x="pad.l - 6" :y="y(e) + 4" text-anchor="end">{{ e }}</text>
         <text v-for="k in xTicks" :key="'xt' + k" :x="x(k * 1000)" :y="height - 6" text-anchor="middle">{{ k }} km</text>
       </g>
-      <path v-for="p in paths" :key="p.id" :d="p.d" :stroke="p.color" fill="none" stroke-width="2" stroke-linejoin="round" />
+      <path v-for="p in paths" :key="p.id" :d="p.d" :stroke="p.color" :stroke-dasharray="p.dashed ? '5 3' : undefined" fill="none" stroke-width="2" stroke-linejoin="round" />
       <line v-if="hoverInfo" class="cursor" :x1="hoverInfo.x" :x2="hoverInfo.x" :y1="pad.t" :y2="pad.t + plotH" />
     </svg>
     <div v-else class="empty">Sin datos de altitud</div>

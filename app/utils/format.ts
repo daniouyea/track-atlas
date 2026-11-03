@@ -10,5 +10,6 @@ export function duration(s?: number | null) {
 const dateFmt = new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })
 export const date = (iso?: string | null) => iso ? dateFmt.format(new Date(iso)) : '–'
 
-// Colores bien distinguibles sobre cualquier mapa base, asignados por orden de selección
-export const PALETTE = ['#fc4c02', '#1f78ff', '#12a150', '#c026d3', '#eab308', '#0891b2', '#e11d48', '#65a30d', '#7c3aed', '#ea580c']
+// Colores bien distinguibles sobre cualquier mapa base, asignados por orden de selección.
+// Sin verdes ni magentas: son los de «ya recorrido» / «nuevo» de la comparación.
+export const PALETTE = ['#fc4c02', '#1f78ff', '#eab308', '#0891b2', '#e11d48', '#7c3aed', '#92400e', '#1e293b', '#64748b']

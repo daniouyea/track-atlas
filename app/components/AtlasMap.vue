@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Map as MlMap, NavigationControl, ScaleControl, GeolocateControl, LngLatBounds, setWorkerUrl, type GeoJSONSource, type StyleSpecification } from 'maplibre-gl'
+import { Map as MlMap, NavigationControl, ScaleControl, GeolocateControl, LngLatBounds, setWorkerUrl, type GeoJSONSource, type StyleSpecification, type ExpressionSpecification } from 'maplibre-gl'
 // maplibre v6 resuelve su worker relativo a import.meta.url, que Vite rompe al empaquetar:
 // se le pasa explícitamente (el worker es autocontenido)
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
@@ -7,11 +7,11 @@ import type { FeatureCollection } from 'geojson'
 import { basemaps } from '~/utils/basemaps'
 import type { DetailPoint } from '~/composables/useAtlas'
 
-const { state, details, filtered } = useAtlas()
+setWorkerUrl(workerUrl)
+
+const { state, details, filtered, style, profileTracks, searchNear } = useAtlas()
 const el = ref<HTMLDivElement>()
 let map: MlMap | undefined
-
-setWorkerUrl(workerUrl)
 
 const empty: FeatureCollection = { type: 'FeatureCollection', features: [] }
 const styleFor = (id: string) => (basemaps.find(b => b.id === id) ?? basemaps[0]!).style as string | StyleSpecification
@@ -31,50 +31,38 @@ onMounted(() => {
 
   // al cambiar de mapa base se pierden las capas propias: se vuelven a añadir
   map.on('style.load', addOverlays)
-  map.on('click', e => useAtlas().searchNear(e.lngLat.lng, e.lngLat.lat))
+  map.on('click', e => searchNear(e.lngLat.lng, e.lngLat.lat))
 })
 
 onBeforeUnmount(() => map?.remove())
 
+/** grosor que escala con el zoom, multiplicado por el factor configurado */
+const width = (k: number, stops: [number, number][]) =>
+  ['interpolate', ['linear'], ['zoom'], ...stops.flatMap(([z, w]) => [z, w * k])] as ExpressionSpecification
+
 function addOverlays() {
   if (!map) return
-  const heatColor = state.basemap === 'dark' ? '#ffb347' : '#fc4c02'
+  const line = { 'line-cap': 'round', 'line-join': 'round' } as const
+
+  // velo entre el mapa base y los tracks para atenuar el mapa
+  map.addLayer({ id: 'veil', type: 'background', paint: {} })
+
   map.addSource('all-tracks', { type: 'geojson', data: `/api/tracks?v=${state.dataVersion}` })
-  map.addLayer({
-    id: 'heat-glow', type: 'line', source: 'all-tracks',
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: {
-      'line-color': heatColor,
-      'line-opacity': 0.08,
-      'line-blur': 3,
-      'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 14, 8, 18, 16],
-    },
-  })
-  map.addLayer({
-    id: 'heat', type: 'line', source: 'all-tracks',
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: {
-      'line-color': heatColor,
-      'line-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0.5, 14, 0.35],
-      'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1, 14, 2, 18, 4],
-    },
-  })
+  map.addLayer({ id: 'heat-glow', type: 'line', source: 'all-tracks', layout: line, paint: { 'line-blur': 3 } })
+  map.addLayer({ id: 'heat', type: 'line', source: 'all-tracks', layout: line, paint: {} })
 
   map.addSource('near-area', { type: 'geojson', data: empty })
   map.addLayer({ id: 'near-fill', type: 'fill', source: 'near-area', paint: { 'fill-color': '#1f78ff', 'fill-opacity': 0.12 } })
   map.addLayer({ id: 'near-line', type: 'line', source: 'near-area', paint: { 'line-color': '#1f78ff', 'line-width': 1.5, 'line-dasharray': [2, 2] } })
 
   map.addSource('selected', { type: 'geojson', data: empty })
-  map.addLayer({
-    id: 'sel-casing', type: 'line', source: 'selected',
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: { 'line-color': '#fff', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 4, 16, 9], 'line-opacity': 0.9 },
-  })
-  map.addLayer({
-    id: 'sel-line', type: 'line', source: 'selected',
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 2.5, 16, 5] },
-  })
+  map.addLayer({ id: 'sel-casing', type: 'line', source: 'selected', layout: line, paint: { 'line-color': '#fff', 'line-opacity': 0.9 } })
+  map.addLayer({ id: 'sel-line', type: 'line', source: 'selected', layout: line, paint: { 'line-color': ['get', 'color'] } })
+
+  // track de referencia: verde lo ya recorrido, otro color lo nuevo (gris mientras se analiza)
+  map.addSource('reference', { type: 'geojson', data: empty })
+  map.addLayer({ id: 'ref-casing', type: 'line', source: 'reference', layout: line, paint: { 'line-color': '#fff' } })
+  map.addLayer({ id: 'ref-line', type: 'line', source: 'reference', layout: line, paint: {} })
 
   map.addSource('hover', { type: 'geojson', data: empty })
   map.addLayer({
@@ -82,20 +70,45 @@ function addOverlays() {
     paint: { 'circle-radius': 6, 'circle-color': ['get', 'color'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 },
   })
 
+  applyStyle()
   updateHeat()
   updateSelected()
+  updateReference()
   updateNear()
   updateHover()
 }
 
 const ready = () => map?.getSource('selected') != null
 
+// --- estilo configurable ---
+function applyStyle() {
+  if (!ready()) return
+  const s = style.value
+  type P = Parameters<MlMap['setPaintProperty']>
+  const set = (layer: string, prop: P[1], value: P[2]) => map!.setPaintProperty(layer, prop, value)
+  set('veil', 'background-color', s.veil)
+  set('veil', 'background-opacity', 1 - s.mapOpacity)
+  set('heat', 'line-color', s.heatColor)
+  set('heat', 'line-opacity', s.heatOpacity)
+  set('heat', 'line-width', width(s.heatWidth, [[8, 1], [14, 2], [18, 4]]))
+  set('heat-glow', 'line-color', s.heatColor)
+  set('heat-glow', 'line-opacity', s.heatOpacity * 0.2)
+  set('heat-glow', 'line-width', width(s.heatWidth, [[8, 3], [14, 8], [18, 16]]))
+  set('sel-line', 'line-width', width(s.selWidth, [[8, 2.5], [16, 5]]))
+  set('sel-casing', 'line-width', width(s.selWidth, [[8, 4.5], [16, 9]]))
+  map!.setLayoutProperty('sel-casing', 'visibility', s.selCasing ? 'visible' : 'none')
+  set('ref-line', 'line-color', ['match', ['get', 'known'], 'yes', s.refKnown, 'no', s.refNew, '#6b7280'])
+  set('ref-line', 'line-width', width(s.refWidth, [[8, 3], [16, 6]]))
+  set('ref-casing', 'line-width', width(s.refWidth, [[8, 5.5], [16, 10]]))
+}
+watch(style, applyStyle, { deep: true })
+
 // --- heatmap: todas las trazas, filtradas igual que la lista ---
 function updateHeat() {
   if (!ready()) return
   const visibility = state.showHeat ? 'visible' : 'none'
   const all = filtered.value.length === state.activities.length
-  const filter = all ? null : ['in', ['get', 'id'], ['literal', filtered.value.map(a => a.id)]] as any
+  const filter = all ? null : ['in', ['get', 'id'], ['literal', filtered.value.map(a => a.id)]] as ExpressionSpecification
   for (const id of ['heat', 'heat-glow']) {
     map!.setLayoutProperty(id, 'visibility', visibility)
     map!.setFilter(id, filter)
@@ -117,26 +130,40 @@ function updateSelected() {
   }))
   ;(map!.getSource('selected') as GeoJSONSource).setData({ type: 'FeatureCollection', features })
 }
-watch([() => [...state.selected], () => Object.keys(details).length], updateSelected)
+watch([() => [...state.selected], () => Object.keys(details).length, () => ({ ...state.colors })], updateSelected)
 
+// --- track de referencia ---
+function updateReference() {
+  if (!ready()) return
+  const ref = state.reference
+  const cmp = state.comparison
+  let data: FeatureCollection = empty
+  if (ref && cmp) {
+    data = {
+      type: 'FeatureCollection',
+      features: cmp.segments.features.map(f => ({ ...f, properties: { known: f.properties.known ? 'yes' : 'no' } })),
+    }
+  } else if (ref) {
+    data = { type: 'FeatureCollection', features: [{ type: 'Feature', properties: { known: 'pending' }, geometry: { type: 'LineString', coordinates: ref.detail.map(p => [p[0], p[1]]) } }] }
+  }
+  ;(map!.getSource('reference') as GeoJSONSource).setData(data)
+}
+watch([() => state.reference, () => state.comparison], updateReference)
+
+// --- encuadre ---
 // encuadra al añadir una actividad a la selección
 watch(() => [...state.selected], (now, before) => {
-  const added = now.find(id => !before.includes(id))
-  if (added) fitTo(now)
+  if (now.some(id => !before.includes(id))) useAtlas().focus(now)
 })
 
-function fitTo(ids: string[]) {
-  const { byId } = useAtlas()
+function fitTo(bboxes: [number, number, number, number][]) {
   const b = new LngLatBounds()
-  for (const id of ids) {
-    const bb = byId.value.get(id)?.bbox
-    if (bb) b.extend([bb[0], bb[1]]).extend([bb[2], bb[3]])
-  }
-  // si hay selección, abajo queda el panel del perfil de elevación
-  const bottom = state.selected.length ? 220 : 60
+  for (const bb of bboxes) b.extend([bb[0], bb[1]]).extend([bb[2], bb[3]])
+  // si hay perfil de elevación, ocupa la parte de abajo
+  const bottom = profileTracks.value.length || state.reference ? 220 : 60
   if (!b.isEmpty()) map?.fitBounds(b, { padding: { top: 60, left: 60, right: 60, bottom }, maxZoom: 15, duration: 600 })
 }
-watch(() => state.fitRequest, (r) => { if (r) fitTo(r.ids) })
+watch(() => state.fitRequest, (r) => { if (r) fitTo(r.bboxes) })
 
 // --- "¿he pasado por aquí?" ---
 function circle(lng: number, lat: number, r: number) {
@@ -174,9 +201,9 @@ function updateHover() {
   const d = state.hoverDistance
   const features = d == null
     ? []
-    : state.selected.filter(id => details[id] && details[id]!.distanceM! >= d).map((id) => {
-        const p = pointAt(details[id]!.detail, d)
-        return { type: 'Feature' as const, properties: { color: state.colors[id] }, geometry: { type: 'Point' as const, coordinates: [p[0], p[1]] } }
+    : profileTracks.value.filter(t => t.detail.at(-1)![3] >= d).map((t) => {
+        const p = pointAt(t.detail, d)
+        return { type: 'Feature' as const, properties: { color: t.color }, geometry: { type: 'Point' as const, coordinates: [p[0], p[1]] } }
       })
   ;(map!.getSource('hover') as GeoJSONSource).setData({ type: 'FeatureCollection', features })
 }

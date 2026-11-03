@@ -2,10 +2,26 @@
 import { basemaps } from '~/utils/basemaps'
 import { km } from '~/utils/format'
 
-const { state, filtered, years, types, byId, loadActivities, clearSelection, focus } = useAtlas()
+const { state, filtered, years, types, byId, profileTracks, loadActivities, clearSelection, focus, loadReferenceFile } = useAtlas()
 const showImport = ref(false)
+const showStyle = ref(false)
+const stravaNotice = ref('')
+
+// arrastrar un GPX/FIT al mapa para compararlo
+const dragging = ref(false)
+function onDrop(e: DragEvent) {
+  dragging.value = false
+  const file = e.dataTransfer?.files[0]
+  if (file) loadReferenceFile(file)
+}
 
 onMounted(async () => {
+  // vuelta del OAuth de Strava
+  const params = new URLSearchParams(location.search)
+  if (params.has('strava')) {
+    stravaNotice.value = params.get('strava') === 'ok' ? 'Conectado con Strava. Ya puedes pegar URLs.' : `No se pudo conectar con Strava (${params.get('strava')})`
+    history.replaceState(null, '', location.pathname)
+  }
   await loadActivities()
   if (!state.activities.length) showImport.value = true
   else focus(state.activities.map(a => a.id))
@@ -35,6 +51,7 @@ function selectAllNear() {
           <option v-for="b in basemaps" :key="b.id" :value="b.id">{{ b.name }}</option>
         </select>
         <label><input v-model="state.showHeat" type="checkbox"> Heatmap</label>
+        <button class="btn small" :class="{ active: showStyle }" title="Colores, grosores y opacidad del mapa" @click="showStyle = !showStyle">Estilo</button>
         <label title="Radio de búsqueda al hacer clic en el mapa">
           Radio
           <select v-model.number="state.nearRadius">
@@ -42,6 +59,10 @@ function selectAllNear() {
           </select>
         </label>
       </div>
+
+      <StylePanel v-if="showStyle" />
+      <p v-if="stravaNotice" class="notice" @click="stravaNotice = ''">{{ stravaNotice }}</p>
+      <ComparePanel />
 
       <section v-if="state.near" class="near">
         <div class="section-head">
@@ -85,9 +106,13 @@ function selectAllNear() {
       </ul>
     </aside>
 
-    <main class="map-area">
+    <main
+      class="map-area"
+      @dragover.prevent="dragging = true" @dragleave.self="dragging = false" @drop.prevent="onDrop"
+    >
       <AtlasMap />
-      <div v-if="state.selected.length" class="profile-panel">
+      <div v-if="dragging" class="drop-hint">Suelta el GPX / FIT para compararlo con tus actividades</div>
+      <div v-if="profileTracks.length" class="profile-panel">
         <ElevationProfile />
       </div>
       <div v-if="!state.near && state.loaded && state.activities.length" class="tip">
