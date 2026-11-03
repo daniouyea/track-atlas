@@ -1,5 +1,6 @@
 import type { H3Event } from 'h3'
 import { useDb } from './db'
+import { publicOrigin } from './origin'
 
 // Credenciales de la app de API de Strava (https://www.strava.com/settings/api)
 const clientId = () => process.env.STRAVA_CLIENT_ID
@@ -17,7 +18,7 @@ export interface TokenResponse {
 }
 
 export function redirectUri(event: H3Event) {
-  return `${getRequestURL(event, { xForwardedHost: true, xForwardedProto: true }).origin}/api/auth/callback`
+  return `${publicOrigin(event)}/api/auth/callback`
 }
 
 export function authorizeUrl(event: H3Event, state: string) {

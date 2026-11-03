@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import type { H3Event } from 'h3'
 import { getSetting, setSetting, transaction, useDb, LEGACY_USER } from './db'
 import type { TokenResponse } from './strava'
+import { isHttps } from './origin'
 
 interface SessionData {
   userId?: number
@@ -19,12 +20,11 @@ function sessionPassword() {
 }
 
 export function useAppSession(event: H3Event) {
-  const https = getRequestURL(event, { xForwardedProto: true }).protocol === 'https:'
   return useSession<SessionData>(event, {
     name: 'ta_session',
     password: sessionPassword(),
     maxAge: 60 * 60 * 24 * 30,
-    cookie: { httpOnly: true, sameSite: 'lax', secure: https, path: '/' },
+    cookie: { httpOnly: true, sameSite: 'lax', secure: isHttps(event), path: '/' },
   })
 }
 
