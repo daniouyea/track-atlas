@@ -55,7 +55,7 @@ function zipSource(path: string): Promise<Source> {
   })
 }
 
-interface CsvActivity {
+export interface CsvActivity {
   id: string
   name?: string
   type?: string
@@ -109,7 +109,7 @@ function parseActivitiesCsv(text: string): CsvActivity[] {
   })).filter(a => a.id)
 }
 
-const TRACK_RE = /\.(gpx|tcx|fit)(\.gz)?$/i
+export const TRACK_RE = /\.(gpx|tcx|fit)(\.gz)?$/i
 
 export interface ImportResult {
   imported: number
@@ -119,85 +119,103 @@ export interface ImportResult {
   errors: { file: string, error: string }[]
 }
 
+export const emptyResult = (): ImportResult => ({ imported: 0, unchanged: 0, skipped: [], errors: [] })
+
+/**
+ * Decide qué hay que importar a partir de activities.csv (si lo hay) y la lista de ficheros del
+ * export. Devuelve, por fichero, la actividad que contiene: solo esos ficheros hace falta leer/subir.
+ */
+export function planImport(userId: number, csvText: string | null, files: string[], opts: { force?: boolean } = {}) {
+  const result = emptyResult()
+  // el ZIP puede venir con una carpeta raíz: localizamos activities.csv donde esté
+  const csvPath = files.find(f => basename(f).toLowerCase() === 'activities.csv')
+  const prefix = csvPath ? csvPath.slice(0, -'activities.csv'.length) : ''
+  let items: CsvActivity[] = csvText ? parseActivitiesCsv(csvText) : []
+  if (!items.length) {
+    // sin CSV: todos los ficheros de track que haya
+    items = files.filter(f => TRACK_RE.test(f)).map(f => ({ id: basename(f).replace(TRACK_RE, ''), filename: f }))
+  }
+
+  const fileSet = new Set(files)
+  const existing = new Set((useDb().prepare('SELECT id FROM activities WHERE user_id = ?').all(userId) as { id: string }[]).map(r => r.id))
+  const todo = new Map<string, CsvActivity>()
+  for (const a of items) {
+    // reimportar solo lo nuevo: procesar (y subir) los ficheros es lo que más tarda
+    if (existing.has(a.id) && !opts.force) { result.unchanged++; continue }
+    if (!a.filename) { result.skipped.push({ id: a.id, reason: 'sin fichero GPS' }); continue }
+    const file = fileSet.has(prefix + a.filename) ? prefix + a.filename : a.filename
+    if (!fileSet.has(file)) { result.skipped.push({ id: a.id, reason: `no encontrado: ${a.filename}` }); continue }
+    todo.set(file, a)
+  }
+  return { todo, result }
+}
+
+/** Procesa el fichero de una actividad y la guarda (crea o actualiza). Anota el resultado. */
+export async function importActivity(userId: number, a: CsvActivity, file: string, buf: Buffer, result: ImportResult, parseAs = file) {
+  try {
+    const parsed = await parseTrackFile(parseAs, buf)
+    const track = processTrack(parsed.points)
+    if (!track) { result.skipped.push({ id: a.id, reason: 'track sin puntos GPS' }); return }
+    const startTime = track.startTime ?? (a.date && !Number.isNaN(Date.parse(a.date)) ? new Date(a.date).toISOString() : null)
+    const db = useDb()
+    transaction(() => {
+      // UPSERT (no INSERT OR REPLACE: el REPLACE borraría en cascada el track y las celdas)
+      db.prepare(`
+        INSERT INTO activities
+          (user_id, id, name, type, start_time, distance_m, moving_time_s, elapsed_time_s, elevation_gain_m,
+           description, gear, min_lng, min_lat, max_lng, max_lat, source_file, imported_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, id) DO UPDATE SET
+          name = excluded.name, type = excluded.type, start_time = excluded.start_time, distance_m = excluded.distance_m,
+          moving_time_s = excluded.moving_time_s, elapsed_time_s = excluded.elapsed_time_s,
+          elevation_gain_m = excluded.elevation_gain_m, description = excluded.description, gear = excluded.gear,
+          min_lng = excluded.min_lng, min_lat = excluded.min_lat, max_lng = excluded.max_lng, max_lat = excluded.max_lat,
+          source_file = excluded.source_file, imported_at = excluded.imported_at`).run(
+        userId, a.id, a.name ?? parsed.name ?? `Actividad ${a.id}`, a.type ?? null, startTime,
+        Math.round(track.distanceM),
+        a.movingTimeS ?? track.movingTimeS, a.elapsedTimeS ?? track.elapsedTimeS,
+        a.elevationGainM ?? track.elevationGainM,
+        a.description ?? null, a.gear ?? null,
+        ...track.bbox, file, new Date().toISOString(),
+      )
+      db.prepare('INSERT OR REPLACE INTO tracks (user_id, activity_id, detail, overview) VALUES (?, ?, ?, ?)')
+        .run(userId, a.id, JSON.stringify(track.detail), JSON.stringify(track.overview))
+      db.prepare('DELETE FROM cells WHERE user_id = ? AND activity_id = ?').run(userId, a.id)
+      const insertCell = db.prepare('INSERT OR IGNORE INTO cells (user_id, cell, activity_id) VALUES (?, ?, ?)')
+      for (const c of trackCells(track.detail)) insertCell.run(userId, c, a.id)
+    })
+    result.imported++
+  } catch (e) {
+    result.errors.push({ file, error: e instanceof Error ? e.message : String(e) })
+  }
+}
+
 interface Progress { running: boolean, done: number, total: number }
 const progress = new Map<number, Progress>()
 
-/** Progreso de la importación en curso del usuario, para mostrarlo en la interfaz. */
+/** Progreso de la importación desde carpeta en curso del usuario, para mostrarlo en la interfaz. */
 export const importProgress = (userId: number): Progress => progress.get(userId) ?? { running: false, done: 0, total: 0 }
 
+/** Importa un export de Strava que está en el servidor (ZIP o carpeta descomprimida). */
 export async function importStravaExport(userId: number, path: string, opts: { force?: boolean } = {}): Promise<ImportResult> {
   const p: Progress = { running: true, done: 0, total: 0 }
   progress.set(userId, p)
-  const src = await openSource(path).catch((e) => { p.running = false; throw e })
-  const result: ImportResult = { imported: 0, unchanged: 0, skipped: [], errors: [] }
   try {
-    // el ZIP puede venir con una carpeta raíz: localizamos activities.csv donde esté
-    const csvPath = src.files.find(f => basename(f).toLowerCase() === 'activities.csv')
-    const prefix = csvPath ? csvPath.slice(0, -'activities.csv'.length) : ''
-    let items: CsvActivity[] = csvPath ? parseActivitiesCsv((await src.read(csvPath)).toString('utf8')) : []
-
-    if (!items.length) {
-      // sin CSV: importamos todos los ficheros de track que haya
-      items = src.files.filter(f => TRACK_RE.test(f)).map(f => ({
-        id: basename(f).replace(TRACK_RE, ''),
-        filename: f,
-      }))
-    }
-
-    const fileSet = new Set(src.files)
-    const db = useDb()
-    const existing = new Set((db.prepare('SELECT id FROM activities WHERE user_id = ?').all(userId) as { id: string }[]).map(r => r.id))
-    // UPSERT (no INSERT OR REPLACE: el REPLACE borraría en cascada el track y las celdas)
-    const upsertActivity = db.prepare(`
-      INSERT INTO activities
-        (user_id, id, name, type, start_time, distance_m, moving_time_s, elapsed_time_s, elevation_gain_m,
-         description, gear, min_lng, min_lat, max_lng, max_lat, source_file, imported_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(user_id, id) DO UPDATE SET
-        name = excluded.name, type = excluded.type, start_time = excluded.start_time, distance_m = excluded.distance_m,
-        moving_time_s = excluded.moving_time_s, elapsed_time_s = excluded.elapsed_time_s,
-        elevation_gain_m = excluded.elevation_gain_m, description = excluded.description, gear = excluded.gear,
-        min_lng = excluded.min_lng, min_lat = excluded.min_lat, max_lng = excluded.max_lng, max_lat = excluded.max_lat,
-        source_file = excluded.source_file, imported_at = excluded.imported_at`)
-    const upsertTrack = db.prepare('INSERT OR REPLACE INTO tracks (user_id, activity_id, detail, overview) VALUES (?, ?, ?, ?)')
-    const deleteCells = db.prepare('DELETE FROM cells WHERE user_id = ? AND activity_id = ?')
-    const insertCell = db.prepare('INSERT OR IGNORE INTO cells (user_id, cell, activity_id) VALUES (?, ?, ?)')
-    const now = new Date().toISOString()
-
-    p.total = items.length
-    for (const a of items) {
-      p.done++
-      // reimportar solo lo nuevo: procesar los ficheros es lo que más tarda
-      if (existing.has(a.id) && !opts.force) { result.unchanged++; continue }
-      if (!a.filename) { result.skipped.push({ id: a.id, reason: 'sin fichero GPS' }); continue }
-      const file = fileSet.has(prefix + a.filename) ? prefix + a.filename : a.filename
-      if (!fileSet.has(file)) { result.skipped.push({ id: a.id, reason: `no encontrado: ${a.filename}` }); continue }
-      try {
-        const parsed = await parseTrackFile(file, await src.read(file))
-        const track = processTrack(parsed.points)
-        if (!track) { result.skipped.push({ id: a.id, reason: 'track sin puntos GPS' }); continue }
-        const startTime = track.startTime ?? (a.date && !Number.isNaN(Date.parse(a.date)) ? new Date(a.date).toISOString() : null)
-        transaction(() => {
-          upsertActivity.run(
-            userId, a.id, a.name ?? parsed.name ?? `Actividad ${a.id}`, a.type ?? null, startTime,
-            Math.round(track.distanceM),
-            a.movingTimeS ?? track.movingTimeS, a.elapsedTimeS ?? track.elapsedTimeS,
-            a.elevationGainM ?? track.elevationGainM,
-            a.description ?? null, a.gear ?? null,
-            ...track.bbox, file, now,
-          )
-          upsertTrack.run(userId, a.id, JSON.stringify(track.detail), JSON.stringify(track.overview))
-          deleteCells.run(userId, a.id)
-          for (const c of trackCells(track.detail)) insertCell.run(userId, c, a.id)
-        })
-        result.imported++
-      } catch (e) {
-        result.errors.push({ file, error: e instanceof Error ? e.message : String(e) })
+    const src = await openSource(path)
+    try {
+      const csvPath = src.files.find(f => basename(f).toLowerCase() === 'activities.csv')
+      const csv = csvPath ? (await src.read(csvPath)).toString('utf8') : null
+      const { todo, result } = planImport(userId, csv, src.files, opts)
+      p.total = todo.size
+      for (const [file, a] of todo) {
+        await importActivity(userId, a, file, await src.read(file), result)
+        p.done++
       }
+      return result
+    } finally {
+      src.close()
     }
   } finally {
-    src.close()
     p.running = false
   }
-  return result
 }

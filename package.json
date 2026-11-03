@@ -10,6 +10,7 @@
     "typecheck": "nuxi prepare && vue-tsc --noEmit -p .nuxt/tsconfig.app.json && vue-tsc --noEmit -p .nuxt/tsconfig.server.json"
   },
   "dependencies": {
+    "@zip.js/zip.js": "^2.24.0",
     "csv-parse": "^7.0.3",
     "fit-file-parser": "^6.2.7",
     "maplibre-gl": "^6.16.0",

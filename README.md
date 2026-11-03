@@ -21,8 +21,10 @@ automáticamente `docker-compose.override.yml` (target `dev`, código montado, p
 ## Importar datos
 
 1. Strava → Ajustes → Mi cuenta → *Descargar o eliminar tu cuenta* → «Solicitar archivo».
-2. Sube el ZIP desde el botón **Importar**, o cópialo (ZIP o descomprimido) en
-   `data/import/<id de atleta>/` y usa «importa desde la carpeta».
+2. Elige el ZIP desde el botón **Importar**. El navegador lo abre (zip.js) y solo sube
+   `activities.csv` y las actividades que faltan, comprimidas con gzip y en tandas de ≤ 20 MB:
+   Cloudflare corta las peticiones de más de 100 MB y el export trae fotos que no hacen falta.
+   Alternativa en el servidor: copiarlo en `data/import/<id de atleta>/` y «importa desde la carpeta».
 
 Reimportar es seguro y rápido: solo se procesan las actividades nuevas (opción para forzar todas). Las que no tienen GPS (rodillo, manuales) se omiten.
 
