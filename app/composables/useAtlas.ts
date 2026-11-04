@@ -86,6 +86,8 @@ const state = reactive({
   /** resultado de la última sincronización con Strava, para avisar al usuario */
   syncNotice: null as SyncResult | null,
   syncing: false,
+  /** indicación de arrastrar el GPX recién descargado de Strava al mapa */
+  downloadHint: false,
   stravaConfigured: true,
   activities: [] as Activity[],
   loaded: false,
@@ -221,6 +223,7 @@ function toCompareError(e: any): CompareError {
 }
 
 async function setReference(load: () => Promise<RefTrack>) {
+  state.downloadHint = false
   state.compareBusy = true
   state.compareError = null
   try {

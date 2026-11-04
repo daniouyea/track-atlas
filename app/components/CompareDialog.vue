@@ -21,6 +21,12 @@ function pickFile(e: Event) {
   if (file) load(() => loadReferenceFile(file))
 }
 
+// la descarga sigue en la pestaña de Strava; aquí se cierra el modal y se indica dónde arrastrarla
+function downloadFromStrava() {
+  state.downloadHint = true
+  close()
+}
+
 function close() {
   state.compareError = null
   emit('close')
@@ -46,7 +52,7 @@ function close() {
       <div v-if="state.compareError" class="error">
         {{ state.compareError.message }}
         <template v-if="state.compareError.exportUrl">
-          <br><a :href="state.compareError.exportUrl" target="_blank" rel="noopener">Descargar el GPX desde Strava</a> y elígelo aquí o suéltalo en el mapa.
+          <br><a :href="state.compareError.exportUrl" target="_blank" rel="noopener" @click="downloadFromStrava">Descargar el GPX desde Strava</a> y suéltalo en el mapa.
         </template>
       </div>
 

@@ -128,5 +128,6 @@ function selectAllNear() {
 
     <ImportDialog v-if="showImport" @close="showImport = false" />
     <CompareDialog v-if="showCompare" @close="showCompare = false" />
+    <DownloadHint v-if="state.downloadHint" />
   </div>
 </template>
