@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { km } from '~/utils/format'
 
-const { state, filtered, years, types, byId, profileTracks, loadMe, logout, syncStrava, loadActivities, clearSelection, focus, loadReferenceFile } = useAtlas()
+const { state, filtered, years, types, byId, profileTracks, loadMe, syncStrava, loadActivities, clearSelection, focus, loadReferenceFile } = useAtlas()
 const showImport = ref(false)
 const showCompare = ref(false)
 
@@ -49,11 +49,7 @@ function selectAllNear() {
           <button class="btn" @click="showImport = true">Importar</button>
         </span>
       </header>
-      <div class="user">
-        <img v-if="state.user.avatar" :src="state.user.avatar" alt="">
-        <span>{{ [state.user.firstname, state.user.lastname].filter(Boolean).join(' ') }}</span>
-        <button class="link" @click="logout">Salir</button>
-      </div>
+      <UserMenu />
 
       <div v-if="state.syncNotice" class="notice">
         <template v-if="state.syncNotice.firstSync">

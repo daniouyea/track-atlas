@@ -40,9 +40,6 @@ input[type="search"], select { padding: 5px 8px; border: 1px solid #d1d5db; bord
 .btn.active { background: #fff1ea; border-color: #fc4c02; color: #fc4c02; }
 .notice { margin: 0; padding: 6px 12px; background: #ecfdf5; color: #065f46; font-size: 13px; border-bottom: 1px solid #d1fae5; }
 .notice .link { padding: 0; }
-.user { display: flex; align-items: center; gap: 8px; padding: 6px 12px; font-size: 13px; color: #374151; border-bottom: 1px solid #f1f1f1; }
-.user img { width: 22px; height: 22px; border-radius: 50%; }
-.user span { flex: 1; }
 .drop-hint {
   position: absolute; inset: 12px; border: 3px dashed #c026d3; border-radius: 12px; background: rgb(192 38 211 / 0.08);
   display: grid; place-items: center; font-size: 18px; font-weight: 600; color: #86198f; pointer-events: none; z-index: 5;
