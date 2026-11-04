@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { km } from '~/utils/format'
 
-const { state, filtered, years, types, byId, profileTracks, loadMe, logout, loadActivities, clearSelection, focus, loadReferenceFile } = useAtlas()
+const { state, filtered, years, types, byId, profileTracks, loadMe, logout, syncStrava, loadActivities, clearSelection, focus, loadReferenceFile } = useAtlas()
 const showImport = ref(false)
 const showCompare = ref(false)
 
@@ -18,8 +18,12 @@ watch(() => state.compareError, (e) => { if (e) showCompare.value = true })
 onMounted(async () => {
   if (!(await loadMe())) return
   await loadActivities()
+  if (state.activities.length) focus(state.activities.map(a => a.id))
+  // novedades de Strava (la primera vez, las últimas actividades)
+  const hadNone = !state.activities.length
+  await syncStrava()
+  if (hadNone && state.activities.length) focus(state.activities.map(a => a.id))
   if (!state.activities.length) showImport.value = true
-  else focus(state.activities.map(a => a.id))
 })
 
 const totalKm = computed(() => km(filtered.value.reduce((s, a) => s + (a.distanceM ?? 0), 0)))
@@ -51,6 +55,22 @@ function selectAllNear() {
         <button class="link" @click="logout">Salir</button>
       </div>
 
+      <div v-if="state.syncNotice" class="notice">
+        <template v-if="state.syncNotice.firstSync">
+          Hemos traído tus {{ state.syncNotice.imported }} actividades más recientes de Strava.
+          Para el resto, <button class="link" @click="showImport = true">importa el ZIP o descarga el historial</button>.
+        </template>
+        <template v-else-if="state.syncNotice.imported">
+          {{ state.syncNotice.imported }} {{ state.syncNotice.imported === 1 ? 'actividad nueva' : 'actividades nuevas' }} de Strava.
+        </template>
+        <template v-if="state.syncNotice.pending">
+          Quedan {{ state.syncNotice.pending }} por traer: se descargarán en la próxima sincronización.
+        </template>
+        <template v-if="state.syncNotice.errors.length">
+          {{ state.syncNotice.errors.length }} no se pudieron descargar.
+        </template>
+        <button class="link" title="Cerrar" @click="state.syncNotice = null">✕</button>
+      </div>
       <ComparePanel />
 
       <section v-if="state.near" class="near">

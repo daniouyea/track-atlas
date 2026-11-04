@@ -1,9 +1,11 @@
-import type { StyleSpecification } from 'maplibre-gl'
+import type { LayerSpecification, SourceSpecification, StyleSpecification } from 'maplibre-gl'
 
 export interface Basemap {
   id: string
   name: string
   style: string | StyleSpecification
+  /** capas que se añaden encima del estilo (que puede venir de una URL) al cargarlo */
+  overlay?: { sources: Record<string, SourceSpecification>, layers: LayerSpecification[] }
 }
 
 const IGN = 'https://www.ign.es/wmts'
@@ -30,4 +32,19 @@ export const basemaps: Basemap[] = [
   { id: 'ign', name: 'IGN Base', style: raster([wmts('ign-base', 'IGNBaseTodo', 'image/png')], '© IGN España', 18) },
   { id: 'pnoa', name: 'Ortofoto PNOA', style: raster([wmts('pnoa-ma', 'OI.OrthoimageCoverage', 'image/jpeg')], '© IGN España · PNOA', 20) },
   { id: 'dark', name: 'Oscuro', style: 'https://tiles.openfreemap.org/styles/dark' },
+  {
+    // heatmap global de Strava (bici) sobre el mapa oscuro; pasa por nuestro servidor (ver server/api/heatmap)
+    id: 'strava', name: 'Heatmap global de Strava',
+    style: 'https://tiles.openfreemap.org/styles/dark',
+    overlay: {
+      sources: {
+        'strava-heat': {
+          type: 'raster', tileSize: 256, maxzoom: 12, // sin login en Strava no hay más detalle
+          tiles: [`${location.origin}/api/heatmap/{z}/{x}/{y}`],
+          attribution: 'Heatmap © Strava',
+        },
+      },
+      layers: [{ id: 'strava-heat', type: 'raster', source: 'strava-heat', paint: { 'raster-opacity': 0.9 } }],
+    },
+  },
 ]

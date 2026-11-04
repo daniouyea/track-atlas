@@ -11,7 +11,7 @@ export function dataDir() {
 /** Dueño provisional de los datos importados antes de que hubiera usuarios. */
 export const LEGACY_USER = 0
 
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS users (
@@ -63,6 +63,23 @@ const SCHEMA = `
     FOREIGN KEY (user_id, activity_id) REFERENCES activities(user_id, id) ON DELETE CASCADE ON UPDATE CASCADE
   ) WITHOUT ROWID;
   CREATE INDEX IF NOT EXISTS cells_activity ON cells(user_id, activity_id);
+
+  -- sincronización con la API de Strava (una fila por usuario)
+  CREATE TABLE IF NOT EXISTS strava_sync (
+    user_id INTEGER PRIMARY KEY,
+    last_sync_at TEXT,
+    backfill TEXT NOT NULL DEFAULT 'off',   -- off | running | done
+    backfill_before INTEGER,                -- cursor: epoch (s) de la actividad más antigua ya revisada
+    backfill_imported INTEGER NOT NULL DEFAULT 0
+  );
+
+  -- actividades de Strava sin GPS (rodillo, manuales…): no se vuelven a pedir
+  CREATE TABLE IF NOT EXISTS strava_skips (
+    user_id INTEGER NOT NULL,
+    id TEXT NOT NULL,
+    reason TEXT,
+    PRIMARY KEY (user_id, id)
+  ) WITHOUT ROWID;
 
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,

@@ -2,7 +2,33 @@
 import { importZip, type ImportResult } from '~/utils/importZip'
 
 const emit = defineEmits<{ close: [] }>()
-const { state, afterImport } = useAtlas()
+const { state, afterImport, syncStrava } = useAtlas()
+
+// --- sincronización con Strava ---
+interface SyncStatus { lastSyncAt: string | null, backfill: 'off' | 'running' | 'done', backfillImported: number, backfillReachedAt: string | null }
+const status = ref<SyncStatus | null>(null)
+const loadStatus = async () => {
+  const before = status.value?.backfillImported
+  status.value = await $fetch<SyncStatus>('/api/strava/status')
+  // lo que va trayendo el historial aparece en el mapa sin esperar
+  if (before != null && status.value.backfillImported > before) afterImport()
+}
+const statusTimer = setInterval(() => { if (status.value?.backfill === 'running') loadStatus() }, 10_000)
+onMounted(loadStatus)
+onBeforeUnmount(() => clearInterval(statusTimer))
+
+async function syncNow() {
+  await syncStrava()
+  await loadStatus()
+}
+
+async function toggleBackfill() {
+  status.value = await $fetch<SyncStatus>('/api/strava/backfill', { method: 'POST', body: { enable: status.value?.backfill !== 'running' } })
+}
+
+
+const fmt = (iso: string | null) => iso ? new Date(iso).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' }) : 'nunca'
+const fmtDate = (iso: string | null) => iso ? new Date(iso).toLocaleDateString('es-ES', { dateStyle: 'medium' }) : ''
 
 const busy = ref(false)
 const error = ref('')
@@ -49,6 +75,28 @@ const importLocal = () => run(() => $fetch<ImportResult[]>('/api/import/local', 
   <div class="backdrop" @click.self="emit('close')">
     <div class="dialog">
       <h2>Importar actividades</h2>
+
+      <section class="strava">
+        <h3>Desde Strava</h3>
+        <p class="hint">
+          Las actividades nuevas se traen solas al abrir la app. Última sincronización: {{ fmt(status?.lastSyncAt ?? null) }}.
+          <button class="link" :disabled="state.syncing" @click="syncNow">{{ state.syncing ? 'sincronizando…' : 'sincronizar ahora' }}</button>
+        </p>
+        <p class="hint">
+          <template v-if="status?.backfill === 'done'">Historial completo descargado ({{ status.backfillImported }} actividades).</template>
+          <template v-else-if="status?.backfill === 'running'">
+            Descargando el historial en segundo plano: {{ status.backfillImported }} importadas<template v-if="status.backfillReachedAt">, revisado hasta el {{ fmtDate(status.backfillReachedAt) }}</template>.
+            Va poco a poco para respetar el límite de la API de Strava; puedes cerrar la app.
+            <button class="link" @click="toggleBackfill">parar</button>
+          </template>
+          <template v-else>
+            ¿Te faltan actividades antiguas? <button class="link" @click="toggleBackfill">Descargar todo el historial en segundo plano</button>
+            (lento: horas o días según cuántas tengas). Con el ZIP es mucho más rápido.
+          </template>
+        </p>
+      </section>
+
+      <h3>Con el ZIP de exportación</h3>
       <ol>
         <li>En Strava: <a href="https://www.strava.com/athlete/delete_your_account" target="_blank" rel="noopener">Ajustes → Mi cuenta → Descargar o eliminar tu cuenta</a> → «Solicitar archivo».</li>
         <li>Te llega por email un ZIP con <code>activities.csv</code> y la carpeta <code>activities/</code>.</li>
@@ -98,6 +146,9 @@ const importLocal = () => run(() => $fetch<ImportResult[]>('/api/import/local', 
 .backdrop { position: fixed; inset: 0; background: rgb(0 0 0 / 0.35); display: grid; place-items: center; z-index: 10; }
 .dialog { background: #fff; border-radius: 10px; padding: 20px 24px; width: min(560px, 92vw); max-height: 85vh; overflow: auto; }
 h2 { margin: 0 0 8px; font-size: 18px; }
+h3 { margin: 14px 0 4px; font-size: 14px; }
+.strava { border-bottom: 1px solid #e5e7eb; padding-bottom: 8px; }
+.strava .hint { margin: 4px 0; }
 ol { padding-left: 20px; line-height: 1.5; font-size: 14px; }
 .hint { font-size: 13px; color: #6b7280; }
 .link { border: 0; background: none; color: #fc4c02; cursor: pointer; padding: 0; font: inherit; text-decoration: underline; }

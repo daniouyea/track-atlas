@@ -28,6 +28,22 @@ automáticamente `docker-compose.override.yml` (target `dev`, código montado, p
 
 Reimportar es seguro y rápido: solo se procesan las actividades nuevas (opción para forzar todas). Las que no tienen GPS (rodillo, manuales) se omiten.
 
+## Sincronización con Strava
+
+- Al abrir la app se traen las actividades nuevas (`POST /api/strava/sync`). Un usuario sin actividades
+  recibe las 50 más recientes; para el resto, el ZIP (rápido) o la descarga del historial.
+- Descarga del historial en segundo plano (`server/plugins/stravaBackfill.ts`, cada minuto): recorre de la
+  más reciente a la más antigua mientras quede cupo. El cupo de la API (lectura: 400 / 15 min, 4000 / día)
+  es **de la aplicación**, compartido entre usuarios: se lee de las cabeceras `X-ReadRateLimit-*` y el
+  historial deja libre un 30 % para la sincronización interactiva.
+- Actividades sin GPS (rodillo, manuales) se recuerdan en `strava_skips` para no volver a pedirlas.
+
+## Heatmap global de Strava
+
+Mapa base «Heatmap global de Strava»: teselas públicas de Strava (bici, hasta zoom 12) sobre el mapa oscuro.
+No traen CORS, así que pasan por `/api/heatmap/{z}/{x}/{y}` (solo con sesión). Más zoom exige las cookies
+de una sesión de strava.com: no implementado.
+
 ## Comparar con otros tracks
 
 Pega una URL de Strava o suelta un GPX/TCX/FIT en el mapa: se marca qué parte ya has recorrido

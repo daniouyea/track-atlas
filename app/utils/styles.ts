@@ -32,6 +32,8 @@ const perBasemap: Record<string, Partial<TrackStyle>> = {
   cyclosm: { heatColor: '#d6006f' },
   mtn: { heatColor: '#e4007c', mapOpacity: 0.85 },
   pnoa: { heatColor: '#ffe14d', heatOpacity: 0.55, refKnown: '#4ade80', refNew: '#ff4dff' },
+  // el heatmap de Strava es rojo/amarillo: el propio en cian para distinguirlos
+  strava: { veil: '#000000', heatColor: '#38bdf8', heatOpacity: 0.6, refKnown: '#4ade80', refNew: '#f472b6' },
   dark: { veil: '#000000', heatColor: '#ffb347', refKnown: '#4ade80', refNew: '#f472b6' },
 }
 

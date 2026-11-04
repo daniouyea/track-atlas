@@ -54,6 +54,14 @@ export interface CompareError {
 
 export interface User { id: number, firstname: string | null, lastname: string | null, avatar: string | null }
 
+export interface SyncResult {
+  imported: number
+  pending: number
+  firstSync: boolean
+  firstSyncLimit: number
+  errors: { file: string, error: string }[]
+}
+
 /** pista que el perfil de elevación y el marcador del mapa tratan igual */
 export interface ProfileTrack { id: string, name: string, color: string, detail: DetailPoint[], dashed?: boolean }
 
@@ -75,6 +83,9 @@ const prefs = loadJson(PREFS_KEY, { basemap: 'liberty', showHeat: true, nearRadi
 const state = reactive({
   /** null: sin sesión; undefined: aún comprobando */
   user: undefined as User | null | undefined,
+  /** resultado de la última sincronización con Strava, para avisar al usuario */
+  syncNotice: null as SyncResult | null,
+  syncing: false,
   stravaConfigured: true,
   activities: [] as Activity[],
   loaded: false,
@@ -139,6 +150,22 @@ async function loadMe() {
   state.user = me.user
   state.stravaConfigured = me.stravaConfigured
   return me.user
+}
+
+/** Trae de Strava las actividades nuevas; avisa solo si ha habido novedades. */
+async function syncStrava() {
+  if (state.syncing) return
+  state.syncing = true
+  try {
+    const r = await $fetch<SyncResult>('/api/strava/sync', { method: 'POST' })
+    if (r.imported) await afterImport()
+    if (r.imported || r.pending || r.errors.length) state.syncNotice = r
+    return r
+  } catch (e) {
+    console.warn('No se pudo sincronizar con Strava', e)
+  } finally {
+    state.syncing = false
+  }
 }
 
 async function logout() {
@@ -259,7 +286,7 @@ async function afterImport() {
 export function useAtlas() {
   return {
     state, details, byId, filtered, years, types, style, profileTracks,
-    loadMe, logout, loadActivities, loadDetail, toggle, focus, setColor, clearSelection, searchNear, afterImport,
+    loadMe, logout, syncStrava, loadActivities, loadDetail, toggle, focus, setColor, clearSelection, searchNear, afterImport,
     setStyle, resetStyle, loadReferenceUrl, loadReferenceFile, runComparison, clearReference,
   }
 }

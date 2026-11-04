@@ -14,12 +14,25 @@ const el = ref<HTMLDivElement>()
 let map: MlMap | undefined
 
 const empty: FeatureCollection = { type: 'FeatureCollection', features: [] }
-const styleFor = (id: string) => (basemaps.find(b => b.id === id) ?? basemaps[0]!).style as string | StyleSpecification
+const basemapFor = (id: string) => basemaps.find(b => b.id === id) ?? basemaps[0]!
+
+/** Carga el mapa base; si tiene capas extra (heatmap de Strava) se añaden al estilo al cargarlo. */
+function setBasemap(id: string) {
+  const b = basemapFor(id)
+  // diff: false fuerza recarga completa y que salte 'style.load' para re-añadir las capas propias
+  map!.setStyle(b.style as string | StyleSpecification, {
+    diff: false,
+    transformStyle: (_prev, next) => b.overlay
+      ? { ...next, sources: { ...next.sources, ...b.overlay.sources }, layers: [...next.layers, ...b.overlay.layers] }
+      : next,
+  })
+}
 
 onMounted(() => {
   map = new MlMap({
     container: el.value!,
-    style: styleFor(state.basemap),
+    // estilo vacío: el real se pone con setBasemap (que admite capas extra)
+    style: { version: 8, sources: {}, layers: [] },
     center: [-3.7, 40.42],
     zoom: 6,
     attributionControl: { compact: true },
@@ -32,6 +45,7 @@ onMounted(() => {
   // al cambiar de mapa base se pierden las capas propias: se vuelven a añadir
   map.on('style.load', addOverlays)
   map.on('click', e => searchNear(e.lngLat.lng, e.lngLat.lat))
+  setBasemap(state.basemap)
 })
 
 onBeforeUnmount(() => map?.remove())
@@ -41,7 +55,8 @@ const width = (k: number, stops: [number, number][]) =>
   ['interpolate', ['linear'], ['zoom'], ...stops.flatMap(([z, w]) => [z, w * k])] as ExpressionSpecification
 
 function addOverlays() {
-  if (!map) return
+  // el estilo vacío inicial también lanza 'style.load'
+  if (!map || !map.getStyle().layers.length) return
   const line = { 'line-cap': 'round', 'line-join': 'round' } as const
 
   // velo entre el mapa base y los tracks para atenuar el mapa
@@ -209,8 +224,7 @@ function updateHover() {
 }
 watch(() => state.hoverDistance, updateHover)
 
-// diff: false fuerza recarga completa y que salte 'style.load' para re-añadir las capas
-watch(() => state.basemap, id => map?.setStyle(styleFor(id), { diff: false }))
+watch(() => state.basemap, id => map && setBasemap(id))
 </script>
 
 <template>

@@ -57,14 +57,46 @@ async function accessToken(userId: number) {
   return t.access_token
 }
 
-export async function stravaApi<T>(userId: number, path: string, opts: { query?: Record<string, string>, responseType?: 'text' } = {}): Promise<T> {
+/**
+ * Cupo de la API de Strava. Es por aplicación (compartido entre todos los usuarios): ventanas de
+ * 15 minutos (en punto, y cuarto, y media, menos cuarto) y diaria (medianoche UTC). Se actualiza con
+ * las cabeceras X-ReadRateLimit-* / X-RateLimit-* de cada respuesta.
+ */
+export const rate = { short: 0, shortLimit: 400, day: 0, dayLimit: 4000, at: 0 }
+
+function trackRate(headers: Headers) {
+  const pair = (name: string) => headers.get(`x-readratelimit-${name}`) ?? headers.get(`x-ratelimit-${name}`)
+  const limit = pair('limit')?.split(',').map(Number)
+  const usage = pair('usage')?.split(',').map(Number)
+  if (limit?.length === 2 && usage?.length === 2 && limit.every(Number.isFinite) && usage.every(Number.isFinite)) {
+    Object.assign(rate, { shortLimit: limit[0], dayLimit: limit[1], short: usage[0], day: usage[1], at: Date.now() })
+  }
+}
+
+/** Peticiones que quedan en la ventana actual, guardando `reserve` (0-1) del cupo para otros usos. */
+export function rateAvailable(reserve = 0) {
+  const now = new Date()
+  const last = new Date(rate.at)
+  const quarter = (d: Date) => Math.floor(d.getTime() / (15 * 60 * 1000))
+  const short = quarter(now) === quarter(last) ? rate.short : 0
+  const day = now.toISOString().slice(0, 10) === last.toISOString().slice(0, 10) ? rate.day : 0
+  return Math.max(0, Math.min(
+    Math.floor(rate.shortLimit * (1 - reserve)) - short,
+    Math.floor(rate.dayLimit * (1 - reserve)) - day,
+  ))
+}
+
+export async function stravaApi<T>(userId: number, path: string, opts: { query?: Record<string, string | number>, responseType?: 'text' } = {}): Promise<T> {
   try {
-    return (await $fetch(`${base()}/api/v3${path}`, {
+    const res = await $fetch.raw(`${base()}/api/v3${path}`, {
       headers: { Authorization: `Bearer ${await accessToken(userId)}` },
       query: opts.query,
       responseType: opts.responseType as any,
-    })) as T
+    })
+    trackRate(res.headers)
+    return res._data as T
   } catch (e: any) {
+    if (e?.response?.headers) trackRate(e.response.headers)
     if (e?.statusCode) throw createError({ statusCode: e.statusCode, statusMessage: `Strava: ${e.statusMessage ?? e.message}` })
     throw e
   }

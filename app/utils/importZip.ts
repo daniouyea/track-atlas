@@ -59,7 +59,7 @@ export async function importZip(file: File, force: boolean, onProgress: (done: n
     const flush = async () => {
       const form = new FormData()
       for (const [name, data] of batch) form.append(name, new Blob([data]))
-      await withRetry(() => $fetch('/api/import/files', { method: 'POST', body: form }))
+      await withRetry(() => $fetch<{ processed: number }>('/api/import/files', { method: 'POST', body: form }))
       done += batch.length
       onProgress(done, plan.needed.length)
       batch = []
