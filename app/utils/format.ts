@@ -12,4 +12,5 @@ export const date = (iso?: string | null) => iso ? dateFmt.format(new Date(iso))
 
 // Colores bien distinguibles sobre cualquier mapa base, asignados por orden de selección.
 // Sin verdes ni magentas: son los de «ya recorrido» / «nuevo» de la comparación.
-export const PALETTE = ['#fc4c02', '#1f78ff', '#eab308', '#0891b2', '#e11d48', '#7c3aed', '#92400e', '#1e293b', '#64748b']
+// Azul primero y naranja al final: el heatmap propio es naranja en casi todos los mapas.
+export const PALETTE = ['#1f78ff', '#e11d48', '#7c3aed', '#eab308', '#0891b2', '#92400e', '#1e293b', '#64748b', '#fc4c02']
