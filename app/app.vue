@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { km } from '~/utils/format'
 
-const { state, filtered, years, types, byId, profileTracks, loadMe, syncStrava, loadActivities, clearSelection, focus, loadReferenceFile } = useAtlas()
+const { state, filtered, zoneActive, years, types, byId, profileTracks, loadMe, syncStrava, loadActivities, clearSelection, focus, loadReferenceFile } = useAtlas()
 const showImport = ref(false)
 const showCompare = ref(false)
 
@@ -97,10 +97,13 @@ function selectAllNear() {
           <option value="">Todos los tipos</option>
           <option v-for="t in types" :key="t" :value="t">{{ t }}</option>
         </select>
+        <label class="in-view" title="La lista muestra solo las actividades que pasan por la zona que ves en el mapa">
+          <input v-model="state.filters.inView" type="checkbox"> Solo lo visible en el mapa
+        </label>
       </div>
 
       <div class="section-head">
-        <span>{{ filtered.length }} actividades · {{ totalKm }}</span>
+        <span>{{ filtered.length }} actividades · {{ totalKm }}<template v-if="zoneActive"> en esta zona</template></span>
         <span v-if="state.selected.length">
           <button class="link" @click="focus(state.selected)">encuadrar</button>
           <button class="link" @click="clearSelection">limpiar ({{ state.selected.length }})</button>
@@ -108,6 +111,7 @@ function selectAllNear() {
       </div>
       <ul class="list main-list">
         <ActivityItem v-for="a in filtered" :key="a.id" :activity="a" />
+        <li v-if="zoneActive && !filtered.length" class="empty">Ninguna actividad pasa por la zona del mapa.</li>
       </ul>
     </aside>
 

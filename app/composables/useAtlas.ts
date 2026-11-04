@@ -1,4 +1,6 @@
-import { reactive, computed, shallowReactive, watch } from 'vue'
+import { reactive, computed, shallowReactive, shallowRef, watch } from 'vue'
+import type { FeatureCollection, LineString } from 'geojson'
+import { lineCrosses, type Bounds } from '~/utils/viewport'
 import { PALETTE } from '~/utils/format'
 import { defaultStyle, type TrackStyle } from '~/utils/styles'
 
@@ -78,7 +80,7 @@ function loadJson<T>(key: string, fallback: T): T {
 }
 
 // preferencias que se recuerdan entre visitas
-const prefs = loadJson(PREFS_KEY, { basemap: 'liberty', showHeat: true, nearRadius: 100, compareTolerance: 30 })
+const prefs = loadJson(PREFS_KEY, { basemap: 'liberty', showHeat: true, nearRadius: 100, compareTolerance: 30, inView: false })
 
 const state = reactive({
   /** null: sin sesión; undefined: aún comprobando */
@@ -94,15 +96,16 @@ const state = reactive({
   /** ids seleccionados, en orden de selección */
   selected: [] as string[],
   colors: {} as Record<string, string>,
-  filters: { q: '', year: '', type: '' },
+  /** inView: solo las actividades que pasan por lo encuadrado en el mapa */
+  filters: { q: '', year: '', type: '', inView: prefs.inView },
+  /** zona encuadrada en el mapa (se actualiza cuando el usuario lo mueve) */
+  viewBounds: null as Bounds | null,
   showHeat: prefs.showHeat,
   basemap: prefs.basemap,
   nearRadius: prefs.nearRadius,
   near: null as null | { lng: number, lat: number, r: number, results: NearResult[], loading: boolean },
   /** punto resaltado desde el perfil de elevación: distancia recorrida (m) */
   hoverDistance: null as number | null,
-  /** sube cada vez que se importan datos, para recargar trazas */
-  dataVersion: 0,
   /** petición de encuadre para el mapa */
   fitRequest: null as null | { bboxes: BBox[] },
   reference: null as RefTrack | null,
@@ -116,7 +119,7 @@ const state = reactive({
 
 watch(() => state.styleOverrides, v => localStorage.setItem(STYLE_KEY, JSON.stringify(v)), { deep: true })
 watch(
-  () => ({ basemap: state.basemap, showHeat: state.showHeat, nearRadius: state.nearRadius, compareTolerance: state.compareTolerance }),
+  () => ({ basemap: state.basemap, showHeat: state.showHeat, nearRadius: state.nearRadius, compareTolerance: state.compareTolerance, inView: state.filters.inView }),
   v => localStorage.setItem(PREFS_KEY, JSON.stringify(v)),
 )
 
@@ -135,13 +138,28 @@ const details = shallowReactive<Record<string, ActivityDetail>>({})
 
 const byId = computed(() => new Map(state.activities.map(a => [a.id, a])))
 
-const filtered = computed(() => {
+/** Trazas simplificadas de todas las actividades: el heatmap y el filtro por zona */
+const tracks = shallowRef<FeatureCollection<LineString, { id: string, type: string | null, year: string | null }> | null>(null)
+const trackById = computed(() => new Map((tracks.value?.features ?? []).map(f => [f.properties.id, f.geometry.coordinates])))
+
+/** Filtros de nombre, año y tipo (los que también se aplican al heatmap) */
+const filteredBase = computed(() => {
   const q = state.filters.q.trim().toLowerCase()
   return state.activities.filter(a =>
     (!q || a.name.toLowerCase().includes(q))
     && (!state.filters.year || a.startTime?.startsWith(state.filters.year))
     && (!state.filters.type || a.type === state.filters.type),
   )
+})
+
+const zoneActive = computed(() => state.filters.inView && !!state.viewBounds && !!tracks.value)
+
+/** Lo que muestra la lista: además, solo lo que pasa por la zona encuadrada si está activado */
+const filtered = computed(() => {
+  if (!zoneActive.value) return filteredBase.value
+  const r = state.viewBounds!
+  // las seleccionadas se quedan siempre, para poder quitarlas
+  return filteredBase.value.filter(a => state.selected.includes(a.id) || lineCrosses(trackById.value.get(a.id) ?? [], a.bbox, r))
 })
 
 const years = computed(() => [...new Set(state.activities.map(a => a.startTime?.slice(0, 4)).filter(Boolean))].sort().reverse() as string[])
@@ -176,7 +194,12 @@ async function logout() {
 }
 
 async function loadActivities() {
-  state.activities = await $fetch<Activity[]>('/api/activities')
+  const [activities, fc] = await Promise.all([
+    $fetch<Activity[]>('/api/activities'),
+    $fetch<typeof tracks.value>('/api/tracks'),
+  ])
+  tracks.value = fc
+  state.activities = activities
   state.loaded = true
   // descarta selecciones de actividades que ya no existen
   state.selected = state.selected.filter(id => byId.value.has(id))
@@ -281,14 +304,13 @@ async function searchNear(lng: number, lat: number) {
 async function afterImport() {
   for (const k of Object.keys(details)) delete details[k]
   await loadActivities()
-  state.dataVersion++
   // hay actividades nuevas con las que comparar
   runComparison().catch(() => {})
 }
 
 export function useAtlas() {
   return {
-    state, details, byId, filtered, years, types, style, profileTracks,
+    state, details, byId, filtered, filteredBase, zoneActive, tracks, years, types, style, profileTracks,
     loadMe, logout, syncStrava, loadActivities, loadDetail, toggle, focus, setColor, clearSelection, searchNear, afterImport,
     setStyle, resetStyle, loadReferenceUrl, loadReferenceFile, runComparison, clearReference,
   }

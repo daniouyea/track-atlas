@@ -9,7 +9,7 @@ import type { DetailPoint } from '~/composables/useAtlas'
 
 setWorkerUrl(workerUrl)
 
-const { state, details, filtered, style, profileTracks, searchNear } = useAtlas()
+const { state, details, filteredBase, tracks, style, profileTracks, searchNear } = useAtlas()
 const el = ref<HTMLDivElement>()
 let map: MlMap | undefined
 
@@ -45,10 +45,26 @@ onMounted(() => {
   // al cambiar de mapa base se pierden las capas propias: se vuelven a añadir
   map.on('style.load', addOverlays)
   map.on('click', e => searchNear(e.lngLat.lng, e.lngLat.lat))
+  // zona encuadrada para el filtro de la lista: solo cuando la mueve el usuario. Si reaccionara a los
+  // encuadres de la app (al pulsar una actividad), la lista cambiaría bajo el ratón. Se mira al empezar
+  // el movimiento: al soltar un arrastre, la inercia termina sin originalEvent.
+  let userMove = false
+  map.on('movestart', (e) => { userMove = !!e.originalEvent })
+  map.on('moveend', (e) => {
+    if (userMove || e.originalEvent || !state.viewBounds) state.viewBounds = currentBounds()
+    userMove = false
+  })
   setBasemap(state.basemap)
 })
 
 onBeforeUnmount(() => map?.remove())
+
+function currentBounds(): [number, number, number, number] {
+  const b = map!.getBounds()
+  return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
+}
+// al activar el filtro, cuenta lo que se ve en ese momento
+watch(() => state.filters.inView, (on) => { if (on && map) state.viewBounds = currentBounds() })
 
 /** grosor que escala con el zoom, multiplicado por el factor configurado */
 const width = (k: number, stops: [number, number][]) =>
@@ -62,7 +78,7 @@ function addOverlays() {
   // velo entre el mapa base y los tracks para atenuar el mapa
   map.addLayer({ id: 'veil', type: 'background', paint: {} })
 
-  map.addSource('all-tracks', { type: 'geojson', data: `/api/tracks?v=${state.dataVersion}` })
+  map.addSource('all-tracks', { type: 'geojson', data: tracks.value ?? empty })
   map.addLayer({ id: 'heat-glow', type: 'line', source: 'all-tracks', layout: line, paint: { 'line-blur': 3 } })
   map.addLayer({ id: 'heat', type: 'line', source: 'all-tracks', layout: line, paint: {} })
 
@@ -122,17 +138,18 @@ watch(style, applyStyle, { deep: true })
 function updateHeat() {
   if (!ready()) return
   const visibility = state.showHeat ? 'visible' : 'none'
-  const all = filtered.value.length === state.activities.length
-  const filter = all ? null : ['in', ['get', 'id'], ['literal', filtered.value.map(a => a.id)]] as ExpressionSpecification
+  // el filtro por zona no se aplica aquí: el mapa ya enseña solo lo encuadrado
+  const all = filteredBase.value.length === state.activities.length
+  const filter = all ? null : ['in', ['get', 'id'], ['literal', filteredBase.value.map(a => a.id)]] as ExpressionSpecification
   for (const id of ['heat', 'heat-glow']) {
     map!.setLayoutProperty(id, 'visibility', visibility)
     map!.setFilter(id, filter)
   }
 }
-watch([() => state.showHeat, filtered], updateHeat)
+watch([() => state.showHeat, filteredBase], updateHeat)
 
-watch(() => state.dataVersion, () => {
-  (map?.getSource('all-tracks') as GeoJSONSource | undefined)?.setData(`/api/tracks?v=${state.dataVersion}`)
+watch(tracks, (fc) => {
+  (map?.getSource('all-tracks') as GeoJSONSource | undefined)?.setData(fc ?? empty)
 })
 
 // --- trazas seleccionadas ---
