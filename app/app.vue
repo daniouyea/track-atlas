@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Activity, Route as RouteIcon, Upload, GitCompare } from 'lucide-vue-next'
 import { km } from '~/utils/format'
 
 const { state, filtered, zoneActive, years, types, byId, profileTracks, loadMe, syncStrava, loadActivities, clearSelection, focus, loadReferenceFile } = useAtlas()
@@ -45,18 +46,19 @@ function selectAllNear() {
     <aside class="sidebar">
       <header>
         <h1>Track Atlas</h1>
-        <span class="actions">
-          <button
-            class="btn" :class="{ active: state.sidebarView === 'routes' }" title="Crear y editar rutas"
-            @click="state.sidebarView = state.sidebarView === 'routes' && !routeEditor.editor.active ? 'activities' : 'routes'"
-          >
-            Rutas
-          </button>
-          <button class="btn" title="Comparar con una URL de Strava o un GPX" @click="showCompare = true">Comparar</button>
-          <button class="btn" @click="showImport = true">Importar</button>
-        </span>
       </header>
       <UserMenu />
+
+      <!-- lo hecho y lo planificado, al mismo nivel -->
+      <nav class="tabs" role="tablist">
+        <button role="tab" :aria-selected="state.sidebarView === 'activities'" @click="state.sidebarView = 'activities'">
+          <Activity :size="15" /> Actividades
+        </button>
+        <button role="tab" :aria-selected="state.sidebarView === 'routes'" @click="state.sidebarView = 'routes'">
+          <RouteIcon :size="15" /> Rutas planificadas
+          <span v-if="routeEditor.editor.active" class="dot" title="Editando una ruta" />
+        </button>
+      </nav>
 
       <div v-if="state.syncNotice" class="notice">
         <template v-if="state.syncNotice.firstSync">
@@ -76,6 +78,14 @@ function selectAllNear() {
       </div>
       <RoutesPanel v-if="state.sidebarView === 'routes'" />
       <template v-else>
+      <div class="tab-actions">
+        <button class="btn small with-icon" title="Importar el ZIP de Strava o sincronizar" @click="showImport = true">
+          <Upload :size="14" /> Importar
+        </button>
+        <button class="btn small with-icon" title="Comparar un track (URL de Strava o GPX) con tus actividades" @click="showCompare = true">
+          <GitCompare :size="14" /> Comparar con un track
+        </button>
+      </div>
       <ComparePanel />
 
       <section v-if="state.near" class="near">
@@ -131,6 +141,7 @@ function selectAllNear() {
     >
       <AtlasMap />
       <MapToolbar />
+      <RouteToolbar v-if="routeEditor.editor.active" />
       <div v-if="dragging" class="drop-hint">Suelta el GPX / FIT para compararlo con tus actividades</div>
       <div v-if="profileTracks.length" class="profile-panel">
         <ElevationProfile />

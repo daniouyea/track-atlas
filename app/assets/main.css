@@ -18,8 +18,17 @@ input[type="search"], select { padding: 5px 8px; border: 1px solid #d1d5db; bord
 .sidebar { display: flex; flex-direction: column; border-right: 1px solid #e5e7eb; min-height: 0; background: #fff; }
 .sidebar header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid #e5e7eb; }
 .sidebar h1 { margin: 0; font-size: 17px; color: #fc4c02; white-space: nowrap; }
-.sidebar header .actions { display: flex; gap: 4px; }
-.sidebar header .btn { padding: 5px 9px; }
+.btn.with-icon { display: inline-flex; align-items: center; gap: 5px; }
+.tabs { display: flex; border-bottom: 1px solid #e5e7eb; }
+.tabs button {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; position: relative;
+  padding: 9px 6px; border: 0; border-bottom: 2px solid transparent; background: none; cursor: pointer;
+  font-size: 13px; color: #6b7280;
+}
+.tabs button:hover { color: #111; background: #fafafa; }
+.tabs button[aria-selected="true"] { color: #fc4c02; border-bottom-color: #fc4c02; font-weight: 600; }
+.tabs .dot { width: 7px; height: 7px; border-radius: 50%; background: #7c3aed; }
+.tab-actions { display: flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid #f1f1f1; }
 .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid #f1f1f1; }
 .filters input[type="search"] { flex: 1; min-width: 140px; }
 .filters .in-view { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #374151; flex-basis: 60%; }

@@ -242,8 +242,8 @@ const profileTracks = computed<ProfileTrack[]>(() => {
     .filter(id => details[id])
     .map(id => ({ id, name: details[id]!.name, color: state.colors[id]!, detail: details[id]!.detail }))
   if (state.reference) tracks.unshift({ id: REF_ID, name: state.reference.name, color: '#111', detail: state.reference.detail, dashed: true })
-  const { editor, doc } = useRouteEditor()
-  if (editor.active && doc.value?.legs.length) tracks.unshift({ id: ROUTE_ID, name: doc.value.name, color: ROUTE_COLOR, detail: routeProfile(doc.value) })
+  const { editor, doc, elevated } = useRouteEditor()
+  if (editor.active && doc.value && elevated.value.length > 1) tracks.unshift({ id: ROUTE_ID, name: doc.value.name, color: ROUTE_COLOR, detail: routeProfile(elevated.value) })
   return tracks
 })
 

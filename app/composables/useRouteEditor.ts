@@ -1,32 +1,50 @@
 import { reactive, computed, shallowRef, triggerRef, watch } from 'vue'
 import {
-  elevationGain, lineDistance, routeCoords, routeFromTrack, splitLeg, straightLeg,
+  elevationGain, lineDistance, routeCoords, routeFromTrack, splitLeg, straightLeg, downloadGpx,
   type Coord, type Leg, type LegMode, type LngLat, type RouteDoc,
 } from '~/utils/route'
+import { withDemElevation } from '~/utils/dem'
 
 export interface SavedRoute { id: string, name: string, distanceM: number, elevationGainM: number, updatedAt: string }
 
 /** Modo con el que se calculan los tramos nuevos o modificados */
 export type DrawMode = Exclude<LegMode, 'fixed'>
+/** Motor de cálculo de rutas (ver /api/routing/engines) */
+export type Engine = 'tracks' | 'brouter' | 'ors' | 'graphhopper' | 'mapbox'
+export interface EngineInfo { id: Engine, name: string, description: string, available: boolean, profiles: { id: string, name: string }[] }
+/** De dónde sale la altitud: el motor de rutas o el modelo digital del terreno */
+export type ElevationSource = 'engine' | 'dem'
 
 const MAX_HISTORY = 40
 const PREFS_KEY = 'track-atlas:route-editor'
 
-function loadPrefs(): { mode: DrawMode, profile: string } {
+interface Prefs { engine: Engine, straight: boolean, profile: string, elevation: ElevationSource }
+function loadPrefs(): Prefs {
+  const defaults: Prefs = { engine: 'tracks', straight: false, profile: 'trekking', elevation: 'dem' }
   try {
-    return { mode: 'tracks', profile: 'trekking', ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') }
+    const saved = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}')
+    // versión anterior: { mode: 'tracks' | 'brouter' | 'straight' }
+    if (saved.mode && !saved.engine) saved.engine = saved.mode === 'straight' ? 'tracks' : saved.mode
+    if (saved.mode === 'straight') saved.straight = true
+    return { ...defaults, ...saved }
   } catch {
-    return { mode: 'tracks', profile: 'trekking' }
+    return defaults
   }
 }
 const prefs = loadPrefs()
 
 const editor = reactive({
   active: false,
-  /** modo para tramos nuevos */
-  mode: prefs.mode as DrawMode,
-  /** perfil de BRouter para el modo «por caminos» */
+  /** motor para tramos nuevos */
+  engine: prefs.engine,
+  /** línea recta: los tramos nuevos no se calculan (para trazar a mano) */
+  straight: prefs.straight,
+  /** perfil del motor (BRouter) */
   profile: prefs.profile,
+  elevation: prefs.elevation,
+  engines: [] as EngineInfo[],
+  /** calculando la altitud del terreno */
+  elevating: false,
   /** tramos calculándose */
   pending: 0,
   dirty: false,
@@ -36,7 +54,15 @@ const editor = reactive({
 })
 
 // la ruta en sí va en un shallowRef: los tramos pueden tener miles de puntos y no hace falta reactividad profunda
-watch(() => [editor.mode, editor.profile], () => localStorage.setItem(PREFS_KEY, JSON.stringify({ mode: editor.mode, profile: editor.profile })))
+watch(() => [editor.engine, editor.straight, editor.profile, editor.elevation], () => localStorage.setItem(PREFS_KEY,
+  JSON.stringify({ engine: editor.engine, straight: editor.straight, profile: editor.profile, elevation: editor.elevation } satisfies Prefs)))
+
+/** modo efectivo para los tramos nuevos */
+const drawMode = computed<DrawMode>(() => editor.straight ? 'straight' : (editor.engine as DrawMode))
+
+async function loadEngines() {
+  if (!editor.engines.length) editor.engines = await $fetch<EngineInfo[]>('/api/routing/engines')
+}
 
 const doc = shallowRef<RouteDoc | null>(null)
 // accesible desde la consola y las pruebas automáticas
@@ -76,15 +102,53 @@ function restore(from: string[], to: string[]) {
 const undo = () => restore(undoStack, redoStack)
 const redo = () => restore(redoStack, undoStack)
 
+/**
+ * Coordenadas de la ruta con la altitud elegida. Con el modelo del terreno se calculan en segundo
+ * plano (densificadas cada 25 m) y se descarta el resultado si la ruta ha cambiado entretanto.
+ */
+const elevated = shallowRef<Coord[]>([])
+let elevToken = 0
+let elevTimer: ReturnType<typeof setTimeout> | undefined
+// el shallowRef directamente (no un getter): así triggerRef también avisa cuando cambia por dentro
+watch([doc, () => editor.elevation, () => editor.active], () => {
+  clearTimeout(elevTimer)
+  const d = doc.value
+  const coords = d && editor.active ? routeCoords(d) : []
+  const token = ++elevToken
+  if (editor.elevation === 'engine' || coords.length < 2) {
+    elevated.value = coords
+    editor.elevating = false
+    return
+  }
+  editor.elevating = true
+  elevTimer = setTimeout(async () => {
+    const r = await withDemElevation(coords)
+    if (token !== elevToken) return
+    elevated.value = r
+    editor.elevating = false
+  }, 250)
+})
+
 const stats = computed(() => {
   const d = doc.value
   if (!d) return { distanceM: 0, elevationGainM: 0, points: 0 }
-  const coords = routeCoords(d)
-  return { distanceM: lineDistance(coords), elevationGainM: elevationGain(coords), points: d.waypoints.length }
+  return { distanceM: lineDistance(routeCoords(d)), elevationGainM: elevationGain(elevated.value), points: d.waypoints.length }
 })
 
+/** Coordenadas para exportar una ruta (guardada o en edición) con la altitud elegida */
+async function exportCoords(d: RouteDoc) {
+  const coords = routeCoords(d)
+  return editor.elevation === 'dem' ? withDemElevation(coords) : coords
+}
+
+async function exportGpx(d: RouteDoc | null = doc.value) {
+  if (!d) return
+  const coords = d === doc.value && elevated.value.length && !editor.elevating ? elevated.value : await exportCoords(d)
+  downloadGpx(d.name, coords)
+}
+
 async function snap(p: LngLat): Promise<LngLat> {
-  if (editor.mode !== 'tracks') return p
+  if (drawMode.value !== 'tracks') return p
   editor.pending++
   try {
     const r = await $fetch<{ point: LngLat | null }>('/api/routing/snap', { method: 'POST', body: { point: p } })
@@ -110,7 +174,7 @@ function enqueue<A extends unknown[], R>(fn: (...args: A) => Promise<R> | R) {
 }
 
 /** Calcula el tramo i con el modo actual; mientras tanto se ve en línea recta. */
-async function computeLeg(i: number, mode: DrawMode = editor.mode, profile = editor.profile) {
+async function computeLeg(i: number, mode: DrawMode = drawMode.value, profile = editor.profile) {
   const d = doc.value
   if (!d) return
   const a = d.waypoints[i]!, b = d.waypoints[i + 1]!
@@ -122,6 +186,7 @@ async function computeLeg(i: number, mode: DrawMode = editor.mode, profile = edi
   legTokens.set(preview, token)
   editor.pending++
   try {
+    if (mode !== 'brouter' && mode !== 'tracks') throw new Error(`Motor no disponible: ${mode}`)
     const r = mode === 'brouter'
       ? await $fetch<{ coordinates: Coord[] }>('/api/routing/brouter', { method: 'POST', body: { from: a, to: b, profile } })
       : await $fetch<{ coordinates: Coord[] }>('/api/routing/tracks', { method: 'POST', body: { from: a, to: b } })
@@ -131,7 +196,7 @@ async function computeLeg(i: number, mode: DrawMode = editor.mode, profile = edi
     d.legs[i] = mode === 'brouter' ? { mode, profile, coords } : { mode, coords }
   } catch (e: any) {
     if (doc.value !== d || legTokens.get(d.legs[i]!) !== token) return
-    d.legs[i] = straightLeg(a, b, e?.data?.statusMessage ?? 'No se pudo calcular el tramo')
+    d.legs[i] = straightLeg(a, b, e?.data?.statusMessage ?? e?.message ?? 'No se pudo calcular el tramo')
   } finally {
     editor.pending--
   }
@@ -224,6 +289,7 @@ function open(next: RouteDoc) {
   editor.message = ''
   // la red de tracks se construye la primera vez (unos segundos): se pide ya, en segundo plano
   $fetch('/api/routing/snap', { method: 'POST', body: { point: [0, 0] } }).catch(() => {})
+  loadEngines().catch(() => {})
 }
 
 const startNew = () => open({ id: crypto.randomUUID(), name: 'Nueva ruta', waypoints: [], legs: [] })
@@ -279,7 +345,7 @@ function rename(name: string) {
 
 export function useRouteEditor() {
   return {
-    editor, doc, stats, history,
+    editor, doc, stats, history, elevated, drawMode, loadEngines, exportGpx,
     startNew, startFromTrack, openSaved, loadSaved, save, deleteSaved, close, rename,
     addPoint, movePoint, insertPoint, removePoint, reverse, clearRoute, undo, redo,
   }

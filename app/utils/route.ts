@@ -86,9 +86,8 @@ export function elevationGain(coords: Coord[], threshold = 3) {
 }
 
 /** Puntos para el perfil de elevación: [lng, lat, ele, distancia acumulada, t] */
-export function routeProfile(doc: RouteDoc): [number, number, number | null, number, null][] {
+export function routeProfile(coords: Coord[]): [number, number, number | null, number, null][] {
   let d = 0
-  const coords = routeCoords(doc)
   const ele = smoothElevation(coords)
   return coords.map((c, i) => {
     if (i) d += haversine(coords[i - 1]!, c)
@@ -133,26 +132,17 @@ export function routeFromTrack(name: string, coords: Coord[]): RouteDoc {
   }
 }
 
-/** Perfiles de bici de BRouter que se ofrecen (el servidor solo acepta estos) */
-export const BROUTER_PROFILES = [
-  { id: 'trekking', name: 'Cicloturismo' },
-  { id: 'gravel', name: 'Gravel' },
-  { id: 'mtb', name: 'MTB' },
-  { id: 'fastbike', name: 'Carretera' },
-  { id: 'fastbike-verylowtraffic', name: 'Carretera, poco tráfico' },
-  { id: 'safety', name: 'Lo más seguro' },
-] as const
-
 const xml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
-export function toGpx(doc: RouteDoc) {
-  const pts = routeCoords(doc).map(c =>
+/** GPX de la ruta con las coordenadas dadas (ya con la altitud elegida) */
+export function toGpx(name: string, coords: Coord[]) {
+  const pts = coords.map(c =>
     `      <trkpt lat="${c[1].toFixed(6)}" lon="${c[0].toFixed(6)}">${c[2] != null ? `<ele>${c[2].toFixed(1)}</ele>` : ''}</trkpt>`).join('\n')
   return `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="Track Atlas" xmlns="http://www.topografix.com/GPX/1/1">
-  <metadata><name>${xml(doc.name)}</name></metadata>
+  <metadata><name>${xml(name)}</name></metadata>
   <trk>
-    <name>${xml(doc.name)}</name>
+    <name>${xml(name)}</name>
     <trkseg>
 ${pts}
     </trkseg>
@@ -161,11 +151,11 @@ ${pts}
 `
 }
 
-export function downloadGpx(doc: RouteDoc) {
-  const blob = new Blob([toGpx(doc)], { type: 'application/gpx+xml' })
+export function downloadGpx(name: string, coords: Coord[]) {
+  const blob = new Blob([toGpx(name, coords)], { type: 'application/gpx+xml' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
-  a.download = `${doc.name.replace(/[^\p{L}\p{N} _-]+/gu, '').trim() || 'ruta'}.gpx`
+  a.download = `${name.replace(/[^\p{L}\p{N} _-]+/gu, '').trim() || 'ruta'}.gpx`
   a.click()
   setTimeout(() => URL.revokeObjectURL(a.href), 1000)
 }
