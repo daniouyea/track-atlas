@@ -9,7 +9,11 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Tesela fuera de rango' })
   const host = `heatmap-external-${'abc'[(x + y) % 3]}.strava.com`
   const res = await fetch(`https://${host}/tiles/ride/hot/${z}/${x}/${y}.png?px=256`)
-  if (!res.ok) throw createError({ statusCode: res.status === 403 ? 404 : 502, statusMessage: 'Tesela no disponible' })
+  // sin datos (zonas vacías, 403/404 de Strava): «no hay tesela» y el mapa la deja en blanco, sin ensuciar el log
+  if (!res.ok) {
+    setResponseStatus(event, 404)
+    return ''
+  }
   setHeader(event, 'Content-Type', 'image/png')
   setHeader(event, 'Cache-Control', 'private, max-age=604800')
   return Buffer.from(await res.arrayBuffer())
