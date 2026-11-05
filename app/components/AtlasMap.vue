@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Map as MlMap, NavigationControl, ScaleControl, GeolocateControl, LngLatBounds, setWorkerUrl, type GeoJSONSource, type StyleSpecification, type ExpressionSpecification, type MapMouseEvent } from 'maplibre-gl'
+import { Map as MlMap, Popup, NavigationControl, ScaleControl, GeolocateControl, LngLatBounds, setWorkerUrl, type GeoJSONSource, type StyleSpecification, type ExpressionSpecification, type MapMouseEvent, type MapTouchEvent } from 'maplibre-gl'
 // maplibre v6 resuelve su worker relativo a import.meta.url, que Vite rompe al empaquetar:
 // se le pasa explícitamente (el worker es autocontenido)
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
@@ -313,32 +313,58 @@ function updateRoute() {
 }
 // el shallowRef directamente (no un getter): así triggerRef también avisa cuando cambia por dentro
 watch([routeEditor.doc, () => routeEditor.editor.active], updateRoute)
+watch([routeEditor.doc, () => routeEditor.editor.active], () => pointPopup?.remove())
 
-/** Elementos de una capa de la ruta bajo el ratón (con un margen para acertar fácil). */
-function hitRoute(e: MapMouseEvent, layers: string[]) {
-  const p = e.point, pad = 6
+// con el dedo hace falta más margen para acertar en un punto o en la línea
+const coarse = import.meta.client && matchMedia('(pointer: coarse)').matches
+
+/** Elementos de una capa de la ruta bajo el ratón o el dedo (con un margen para acertar fácil). */
+function hitRoute(e: { point: { x: number, y: number } }, layers: string[]) {
+  const p = e.point, pad = coarse ? 16 : 6
   return map!.queryRenderedFeatures([[p.x - pad, p.y - pad], [p.x + pad, p.y + pad]], { layers })
 }
 
 function onEditorClick(e: MapMouseEvent) {
-  if (hitRoute(e, ['route-points']).length) return // los puntos se arrastran o se borran con clic derecho
+  if (hitRoute(e, ['route-points']).length) return // los puntos se arrastran o se borran con clic derecho (o tocándolos)
+  if (pointPopup?.isOpen()) { pointPopup.remove(); return } // tocar fuera del globo solo lo cierra
   const leg = hitRoute(e, ['route-line', 'route-straight'])[0]
   if (leg) routeEditor.insertPoint(leg.properties.i as number, [e.lngLat.lng, e.lngLat.lat])
   else routeEditor.addPoint([e.lngLat.lng, e.lngLat.lat])
+}
+
+/** En pantallas táctiles no hay clic derecho: tocar un punto abre un globo para borrarlo. */
+let pointPopup: Popup | undefined
+function askRemovePoint(i: number) {
+  const pos = routeEditor.doc.value?.waypoints[i]
+  if (!pos) return
+  pointPopup?.remove()
+  const btn = document.createElement('button')
+  btn.className = 'popup-remove'
+  btn.textContent = 'Borrar este punto'
+  btn.onclick = () => { pointPopup?.remove(); routeEditor.removePoint(i) }
+  // closeOnClick no sirve: el clic que sigue al propio toque lo cerraría al momento (se cierra en onEditorClick)
+  pointPopup = new Popup({ closeButton: false, closeOnClick: false, offset: 14 }).setLngLat([pos[0], pos[1]]).setDOMContent(btn).addTo(map!)
 }
 
 function setupRouteEditing(m: MlMap) {
   const canvas = m.getCanvas()
   // movimiento y suelta se escuchan en la ventana: si se suelta encima de otro elemento (el perfil
   // de elevación, la barra lateral) el mapa no recibe el mouseup y el arrastre se quedaría enganchado
-  const onMove = (ev: MouseEvent) => {
+  const moveTo = (clientX: number, clientY: number) => {
     const r = canvas.getBoundingClientRect()
-    const ll = m.unproject([ev.clientX - r.left, ev.clientY - r.top])
+    const ll = m.unproject([clientX - r.left, clientY - r.top])
     dragPos = [ll.lng, ll.lat]
     updateRoute()
   }
+  const onMouseMove = (ev: MouseEvent) => moveTo(ev.clientX, ev.clientY)
+  const onTouchMove = (ev: TouchEvent) => {
+    if (ev.touches.length !== 1) return
+    ev.preventDefault()
+    moveTo(ev.touches[0]!.clientX, ev.touches[0]!.clientY)
+  }
   const onUp = () => {
-    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mousemove', onMouseMove)
+    window.removeEventListener('touchmove', onTouchMove)
     m.dragPan.enable()
     canvas.style.cursor = 'crosshair'
     const i = dragIndex, p = dragPos
@@ -346,18 +372,41 @@ function setupRouteEditing(m: MlMap) {
     dragPos = null
     if (p) routeEditor.movePoint(i, p)
     else updateRoute()
+    return { i, moved: !!p }
   }
-  m.on('mousedown', 'route-points', (e) => {
-    if (!routeEditor.editor.active || e.originalEvent.button !== 0) return
-    e.preventDefault() // sin esto el mapa se desplazaría en vez de mover el punto
-    dragIndex = e.features![0]!.properties.i as number
+  const startDrag = (i: number) => {
+    pointPopup?.remove()
+    dragIndex = i
     m.dragPan.disable()
+  }
+  // tras un toque el navegador emula mousedown/mouseup: no deben empezar otro arrastre
+  let lastTouch = 0
+  m.on('mousedown', 'route-points', (e) => {
+    if (!routeEditor.editor.active || e.originalEvent.button !== 0 || Date.now() - lastTouch < 1000) return
+    e.preventDefault() // sin esto el mapa se desplazaría en vez de mover el punto
+    startDrag(e.features![0]!.properties.i as number)
     canvas.style.cursor = 'grabbing'
-    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mousemove', onMouseMove)
     window.addEventListener('mouseup', onUp, { once: true })
   })
+  // con el dedo: arrastrar mueve el punto; tocarlo sin moverlo ofrece borrarlo
+  m.on('touchstart', (e: MapTouchEvent) => {
+    lastTouch = Date.now()
+    if (!routeEditor.editor.active || e.originalEvent.touches.length !== 1) return
+    const hit = hitRoute(e, ['route-points'])[0]
+    if (!hit) return
+    e.preventDefault()
+    startDrag(hit.properties.i as number)
+    window.addEventListener('touchmove', onTouchMove, { passive: false })
+    window.addEventListener('touchend', () => {
+      lastTouch = Date.now()
+      const { i, moved } = onUp()
+      if (!moved) askRemovePoint(i)
+    }, { once: true })
+  })
   m.on('contextmenu', 'route-points', (e) => {
-    if (!routeEditor.editor.active) return
+    // en Android mantener pulsado también lanza contextmenu: ese caso ya lo lleva el arrastre táctil
+    if (!routeEditor.editor.active || dragIndex >= 0) return
     e.preventDefault()
     routeEditor.removePoint(e.features![0]!.properties.i as number)
   })
@@ -395,4 +444,5 @@ watch(() => state.basemap, id => map && setBasemap(id))
 
 <style scoped>
 .atlas-map { position: absolute; inset: 0; }
+.atlas-map :deep(.popup-remove) { border: 0; background: none; color: #b91c1c; font: inherit; font-size: 14px; padding: 6px 4px; cursor: pointer; }
 </style>

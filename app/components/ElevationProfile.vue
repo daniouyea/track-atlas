@@ -79,17 +79,21 @@ const hoverInfo = computed(() => {
   }
 })
 
-function onMove(e: MouseEvent) {
+function onMove(e: PointerEvent) {
   const rect = (e.currentTarget as SVGElement).getBoundingClientRect()
   const px = e.clientX - rect.left
   if (px < pad.l || px > pad.l + plotW.value) { state.hoverDistance = null; return }
   state.hoverDistance = ((px - pad.l) / plotW.value) * domain.value.maxD
 }
+// con el dedo, al levantarlo el cursor se queda donde estaba (para poder mirar el punto en el mapa)
+function onLeave(e: PointerEvent) {
+  if (e.pointerType === 'mouse') state.hoverDistance = null
+}
 </script>
 
 <template>
   <div ref="box" class="profile">
-    <svg v-if="tracks.length" :width="width" :height="height" @mousemove="onMove" @mouseleave="state.hoverDistance = null">
+    <svg v-if="tracks.length" :width="width" :height="height" @pointermove="onMove" @pointerdown="onMove" @pointerleave="onLeave">
       <g class="grid">
         <line v-for="e in yTicks" :key="'y' + e" :x1="pad.l" :x2="pad.l + plotW" :y1="y(e)" :y2="y(e)" />
         <text v-for="e in yTicks" :key="'yt' + e" :x="pad.l - 6" :y="y(e) + 4" text-anchor="end">{{ e }}</text>
@@ -112,7 +116,7 @@ function onMove(e: MouseEvent) {
 
 <style scoped>
 .profile { position: relative; height: 150px; user-select: none; }
-svg { display: block; cursor: crosshair; }
+svg { display: block; cursor: crosshair; touch-action: none; }
 .grid line { stroke: #e5e7eb; }
 .grid text { font-size: 10px; fill: #6b7280; }
 .cursor { stroke: #111; stroke-width: 1; pointer-events: none; }

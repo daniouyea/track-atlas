@@ -57,6 +57,8 @@ async function toRoute() {
 .meta { font-size: 12px; color: #6b7280; }
 .actions { display: flex; gap: 2px; opacity: 0; }
 .item:hover .actions { opacity: 1; }
+/* sin ratón no hay :hover: los botones siempre a la vista */
+@media (hover: none) { .actions { opacity: 1; } }
 .actions button, .actions a {
   border: 0; background: none; cursor: pointer; font-size: 15px; color: #6b7280;
   text-decoration: none; padding: 2px 4px; border-radius: 4px;

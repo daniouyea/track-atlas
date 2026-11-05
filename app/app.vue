@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { Activity, Route as RouteIcon, Upload, GitCompare, PanelLeftClose, PanelLeftOpen } from 'lucide-vue-next'
+import { Activity, Route as RouteIcon, Upload, GitCompare, PanelLeftClose, PanelLeftOpen, ChevronUp, ChevronDown } from 'lucide-vue-next'
 import { km } from '~/utils/format'
 
 const { state, filtered, zoneActive, years, types, byId, profileTracks, loadMe, syncStrava, loadActivities, clearSelection, focus, loadReferenceFile } = useAtlas()
 const routeEditor = useRouteEditor()
+const { mobile, collapsed, setCollapsed, openView } = useSidebar()
 const showImport = ref(false)
 const showCompare = ref(false)
 
@@ -42,20 +43,22 @@ function selectAllNear() {
 <template>
   <div v-if="state.user === undefined" />
   <LoginScreen v-else-if="!state.user" :strava-configured="state.stravaConfigured" />
-  <div v-else class="layout" :class="{ collapsed: state.sidebarCollapsed }">
+  <div v-else class="layout" :class="{ collapsed, mobile }">
     <!-- barra plegada: franja de iconos; cada uno despliega la barra en su pestaña -->
-    <aside v-if="state.sidebarCollapsed" class="rail">
-      <button class="rail-btn" title="Desplegar la barra lateral" @click="state.sidebarCollapsed = false"><PanelLeftOpen :size="18" /></button>
+    <aside v-if="collapsed" class="rail">
+      <button class="rail-btn" :title="mobile ? 'Abrir el panel' : 'Desplegar la barra lateral'" @click="setCollapsed(false)">
+        <component :is="mobile ? ChevronUp : PanelLeftOpen" :size="18" />
+      </button>
       <hr>
       <button
         class="rail-btn" :class="{ on: state.sidebarView === 'activities' }" title="Actividades"
-        @click="state.sidebarView = 'activities'; state.sidebarCollapsed = false"
+        @click="openView('activities')"
       >
         <Activity :size="18" />
       </button>
       <button
         class="rail-btn" :class="{ on: state.sidebarView === 'routes' }" title="Rutas planificadas"
-        @click="state.sidebarView = 'routes'; state.sidebarCollapsed = false"
+        @click="openView('routes')"
       >
         <RouteIcon :size="18" />
         <span v-if="routeEditor.editor.active" class="dot" />
@@ -63,7 +66,7 @@ function selectAllNear() {
       <hr>
       <button class="rail-btn" title="Importar" @click="showImport = true"><Upload :size="18" /></button>
       <button class="rail-btn" title="Comparar con un track" @click="showCompare = true"><GitCompare :size="18" /></button>
-      <button class="rail-btn avatar" :title="[state.user.firstname, state.user.lastname].filter(Boolean).join(' ')" @click="state.sidebarCollapsed = false">
+      <button class="rail-btn avatar" :title="[state.user.firstname, state.user.lastname].filter(Boolean).join(' ')" @click="setCollapsed(false)">
         <img v-if="state.user.avatar" :src="state.user.avatar" alt="">
         <span v-else>{{ (state.user.firstname ?? '?').charAt(0) }}</span>
       </button>
@@ -72,7 +75,9 @@ function selectAllNear() {
     <aside v-else class="sidebar">
       <header>
         <h1>Track Atlas</h1>
-        <button class="collapse" title="Plegar la barra lateral" @click="state.sidebarCollapsed = true"><PanelLeftClose :size="18" /></button>
+        <button class="collapse" :title="mobile ? 'Cerrar el panel' : 'Plegar la barra lateral'" @click="setCollapsed(true)">
+          <component :is="mobile ? ChevronDown : PanelLeftClose" :size="18" />
+        </button>
       </header>
       <UserMenu />
 
@@ -167,17 +172,21 @@ function selectAllNear() {
       @dragover.prevent="dragging = true" @dragleave.self="dragging = false" @drop.prevent="onDrop"
     >
       <AtlasMap />
-      <MapToolbar />
-      <RouteToolbar v-if="routeEditor.editor.active" />
+      <!-- barras de la esquina superior izquierda, apiladas (si la de arriba ocupa dos líneas, la otra baja) -->
+      <div class="map-left">
+        <MapToolbar />
+        <RouteToolbar v-if="routeEditor.editor.active" />
+      </div>
       <div v-if="dragging" class="drop-hint">Suelta el GPX / FIT para compararlo con tus actividades</div>
       <div v-if="profileTracks.length" class="profile-panel">
         <ElevationProfile />
       </div>
       <div v-if="routeEditor.editor.active && !routeEditor.doc.value?.waypoints.length" class="tip">
-        Haz clic en el mapa para poner el punto de salida
+        {{ mobile ? 'Toca' : 'Haz clic en' }} el mapa para poner el punto de salida
       </div>
       <div v-else-if="!routeEditor.editor.active && !state.near && !profileTracks.length && state.loaded && state.activities.length" class="tip">
-        Clic en el mapa: ¿he pasado por aquí? · Clic en una actividad: superponer
+        <template v-if="mobile">Toca el mapa: ¿he pasado por aquí?</template>
+        <template v-else>Clic en el mapa: ¿he pasado por aquí? · Clic en una actividad: superponer</template>
       </div>
     </main>
 

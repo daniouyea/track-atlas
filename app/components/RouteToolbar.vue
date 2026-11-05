@@ -114,7 +114,7 @@ onBeforeUnmount(() => { document.removeEventListener('click', onClick); document
 </template>
 
 <style scoped>
-.route-toolbar { position: absolute; left: 10px; top: 62px; z-index: 3; display: flex; flex-direction: column; gap: 8px; }
+.route-toolbar { position: relative; z-index: 3; display: flex; flex-direction: column; gap: 8px; }
 .group { display: flex; flex-direction: column; background: #fff; border-radius: 8px; box-shadow: 0 2px 10px rgb(0 0 0 / 0.18); }
 .item { position: relative; }
 .tool {
@@ -130,13 +130,15 @@ onBeforeUnmount(() => { document.removeEventListener('click', onClick); document
 .tool.active, .tool.active:hover:not(:disabled) { background: var(--accent); color: #fff; }
 /* indicador de menú desplegable */
 .tool.menu::after { content: ''; position: absolute; right: 4px; bottom: 4px; border: 3px solid transparent; border-right-color: currentColor; border-bottom-color: currentColor; opacity: 0.6; }
-/* tooltip a la derecha */
+/* tooltip a la derecha (solo con ratón: en pantallas táctiles el :hover se queda pegado) */
+@media (hover: hover) {
 .tool[data-tip]:hover::before {
   content: attr(data-tip); position: absolute; left: calc(100% + 8px); top: 50%; transform: translateY(-50%);
   white-space: nowrap; background: rgb(17 24 39 / 0.9); color: #fff; font-size: 12px; padding: 4px 8px; border-radius: 4px;
   pointer-events: none; z-index: 5;
 }
 .tool.on[data-tip]:hover::before { display: none; }
+}
 .popover {
   position: absolute; left: calc(100% + 8px); top: 0; z-index: 6; width: 250px; padding: 6px;
   background: #fff; border-radius: 8px; box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);

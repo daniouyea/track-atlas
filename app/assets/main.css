@@ -2,6 +2,7 @@ html, body, #__nuxt { margin: 0; height: 100%; }
 body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 14px; color: #111; }
 * { box-sizing: border-box; }
 input, select, button { font: inherit; }
+button, a, label { -webkit-tap-highlight-color: transparent; }
 input[type="search"], select { padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; }
 
 .btn {
@@ -14,7 +15,7 @@ input[type="search"], select { padding: 5px 8px; border: 1px solid #d1d5db; bord
 .link { border: 0; background: none; color: #fc4c02; cursor: pointer; padding: 0 4px; }
 .link:hover { text-decoration: underline; }
 
-.layout { display: grid; grid-template-columns: 380px 1fr; height: 100vh; }
+.layout { display: grid; grid-template-columns: 380px 1fr; height: 100vh; height: 100dvh; }
 .layout.collapsed { grid-template-columns: 52px 1fr; }
 .sidebar header .collapse { display: grid; place-items: center; border: 0; background: none; color: #6b7280; cursor: pointer; padding: 4px; border-radius: 6px; }
 .sidebar header .collapse:hover { background: #f3f4f6; color: #111; }
@@ -52,6 +53,11 @@ input[type="search"], select { padding: 5px 8px; border: 1px solid #d1d5db; bord
 .near .list { max-height: 30vh; }
 
 .map-area { position: relative; min-width: 0; }
+.map-left {
+  position: absolute; top: 10px; left: 10px; right: 54px; z-index: 4; pointer-events: none;
+  display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
+}
+.map-left > * { pointer-events: auto; }
 .profile-panel {
   position: absolute; left: 10px; right: 54px; bottom: 30px; background: rgb(255 255 255 / 0.95);
   border-radius: 8px; box-shadow: 0 2px 10px rgb(0 0 0 / 0.15); padding: 4px;
@@ -70,3 +76,39 @@ input[type="search"], select { padding: 5px 8px; border: 1px solid #d1d5db; bord
 }
 .sidebar { overflow-y: auto; }
 .main-list { min-height: 200px; }
+
+/* ── móvil: mapa a pantalla completa; la barra lateral pasa a ser una hoja inferior ── */
+@media (max-width: 768px) {
+  .layout, .layout.collapsed { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
+  .layout:not(.collapsed) { grid-template-rows: minmax(0, 1fr) 58dvh; }
+  .map-area { grid-row: 1; min-height: 0; }
+  .rail, .sidebar { grid-row: 2; }
+
+  .rail {
+    flex-direction: row; justify-content: space-around; border-right: 0; border-top: 1px solid #e5e7eb;
+    padding: 4px 8px calc(4px + env(safe-area-inset-bottom));
+  }
+  .rail hr { display: none; }
+  .rail-btn { width: 44px; height: 44px; }
+  .rail-btn.avatar { margin-top: 0; }
+
+  .sidebar {
+    border-right: 0; border-radius: 12px 12px 0 0; box-shadow: 0 -4px 16px rgb(0 0 0 / 0.12);
+    padding-bottom: env(safe-area-inset-bottom); position: relative; z-index: 6;
+  }
+  .sidebar header { padding: 6px 12px; }
+  .sidebar header .collapse { padding: 8px; }
+  .main-list { min-height: 0; }
+  .near .list { max-height: 20dvh; }
+
+  .profile-panel { left: 6px; right: 6px; bottom: 34px; }
+  .tip { white-space: nowrap; max-width: calc(100% - 20px); overflow: hidden; text-overflow: ellipsis; }
+}
+
+/* pantallas táctiles: dedos en vez de cursor */
+@media (pointer: coarse) {
+  /* iOS hace zoom al enfocar campos con letra de menos de 16 px */
+  input[type="search"], input[type="url"], input[type="text"], input:not([type]), select { font-size: 16px; }
+  .btn.small { padding: 6px 12px; }
+  .tabs button { padding: 12px 6px; }
+}

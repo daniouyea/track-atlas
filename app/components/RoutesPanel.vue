@@ -79,7 +79,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
           <li><strong>Clic en el mapa</strong>: añade un punto al final.</li>
           <li><strong>Arrastrar un punto</strong>: lo mueve y recalcula sus tramos.</li>
           <li><strong>Clic sobre la ruta</strong>: inserta un punto sin cambiarla.</li>
-          <li><strong>Clic derecho en un punto</strong>: lo borra.</li>
+          <li><strong>Clic derecho en un punto</strong> (en móvil, tocarlo): lo borra.</li>
           <li>Para cambiar solo un trozo: pon un punto al inicio y otro al final del trozo, y arrastra uno intermedio.</li>
           <li>Motor, altitud, perfil y línea recta: en la barra de la izquierda del mapa.</li>
         </ul>
@@ -103,6 +103,8 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 .route .meta { font-size: 12px; color: #6b7280; }
 .route .actions { display: flex; gap: 2px; opacity: 0; }
 .route:hover .actions { opacity: 1; }
+/* sin ratón no hay :hover: los botones siempre a la vista */
+@media (hover: none) { .route .actions { opacity: 1; } }
 .route .actions button { display: grid; place-items: center; border: 0; background: none; cursor: pointer; color: #6b7280; padding: 4px; border-radius: 4px; }
 .route .actions button:hover { background: #e5e7eb; color: #111; }
 .empty { padding: 16px 12px; color: #6b7280; font-size: 13px; }

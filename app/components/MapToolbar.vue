@@ -29,11 +29,11 @@ const showStyle = ref(false)
 </template>
 
 <style scoped>
-.map-toolbar { position: absolute; top: 10px; left: 10px; z-index: 4; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.map-toolbar { position: relative; z-index: 4; max-width: 100%; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .bar, .popover { background: rgb(255 255 255 / 0.96); border-radius: 8px; box-shadow: 0 2px 10px rgb(0 0 0 / 0.18); }
 .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 6px 10px; font-size: 13px; }
 .bar label { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
 .bar select { padding: 3px 6px; }
-.popover { width: 300px; max-height: calc(100vh - 80px); overflow: auto; }
+.popover { width: 300px; max-width: 100%; max-height: calc(100dvh - 80px); overflow: auto; }
 .popover :deep(.style-panel) { background: none; border: 0; }
 </style>
