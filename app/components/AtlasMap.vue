@@ -319,12 +319,16 @@ function onEditorClick(e: MapMouseEvent) {
 
 function setupRouteEditing(m: MlMap) {
   const canvas = m.getCanvas()
-  const onMove = (e: MapMouseEvent) => {
-    dragPos = [e.lngLat.lng, e.lngLat.lat]
+  // movimiento y suelta se escuchan en la ventana: si se suelta encima de otro elemento (el perfil
+  // de elevación, la barra lateral) el mapa no recibe el mouseup y el arrastre se quedaría enganchado
+  const onMove = (ev: MouseEvent) => {
+    const r = canvas.getBoundingClientRect()
+    const ll = m.unproject([ev.clientX - r.left, ev.clientY - r.top])
+    dragPos = [ll.lng, ll.lat]
     updateRoute()
   }
   const onUp = () => {
-    m.off('mousemove', onMove)
+    window.removeEventListener('mousemove', onMove)
     m.dragPan.enable()
     canvas.style.cursor = 'crosshair'
     const i = dragIndex, p = dragPos
@@ -339,8 +343,8 @@ function setupRouteEditing(m: MlMap) {
     dragIndex = e.features![0]!.properties.i as number
     m.dragPan.disable()
     canvas.style.cursor = 'grabbing'
-    m.on('mousemove', onMove)
-    m.once('mouseup', onUp)
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp, { once: true })
   })
   m.on('contextmenu', 'route-points', (e) => {
     if (!routeEditor.editor.active) return

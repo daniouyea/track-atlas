@@ -2,13 +2,15 @@
  * Ruta planificada: puntos de paso y, entre cada dos, un tramo calculado con un modo.
  * El tramo i une waypoints[i] y waypoints[i + 1]; sus coords incluyen los dos extremos.
  */
-export type LegMode = 'tracks' | 'straight' | 'fixed'
+export type LegMode = 'tracks' | 'brouter' | 'straight' | 'fixed'
 export type Coord = [number, number, number | null]
 export type LngLat = [number, number]
 
 export interface Leg {
-  /** tracks: siguiendo mis tracks · straight: línea recta · fixed: geometría de un track importado */
+  /** tracks: siguiendo mis tracks · brouter: por caminos · straight: línea recta · fixed: track importado */
   mode: LegMode
+  /** perfil de BRouter con el que se calculó (modo brouter) */
+  profile?: string
   coords: Coord[]
   /** si no se pudo calcular como se pidió (p. ej. sin tracks cerca) y quedó en línea recta */
   error?: string
@@ -130,6 +132,16 @@ export function routeFromTrack(name: string, coords: Coord[]): RouteDoc {
     legs: [{ mode: 'fixed', coords }],
   }
 }
+
+/** Perfiles de bici de BRouter que se ofrecen (el servidor solo acepta estos) */
+export const BROUTER_PROFILES = [
+  { id: 'trekking', name: 'Cicloturismo' },
+  { id: 'gravel', name: 'Gravel' },
+  { id: 'mtb', name: 'MTB' },
+  { id: 'fastbike', name: 'Carretera' },
+  { id: 'fastbike-verylowtraffic', name: 'Carretera, poco tráfico' },
+  { id: 'safety', name: 'Lo más seguro' },
+] as const
 
 const xml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 

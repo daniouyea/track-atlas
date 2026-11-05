@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { km, meters, date } from '~/utils/format'
-import { downloadGpx, type RouteDoc } from '~/utils/route'
+import { BROUTER_PROFILES, downloadGpx, type RouteDoc } from '~/utils/route'
 
 const { editor, doc, stats, history, startNew, openSaved, loadSaved, save, deleteSaved, close, rename, reverse, clearRoute, undo, redo } = useRouteEditor()
 const { state } = useAtlas()
@@ -66,13 +66,22 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
         <input class="name" :value="doc.name" placeholder="Nombre de la ruta" @change="rename(($event.target as HTMLInputElement).value)">
 
         <div class="modes" role="radiogroup" aria-label="Cómo se calculan los tramos">
-          <label :class="{ on: editor.mode === 'tracks' }">
-            <input v-model="editor.mode" type="radio" value="tracks"> Siguiendo mis tracks
+          <label :class="{ on: editor.mode === 'tracks' }" title="Por donde ya has pasado">
+            <input v-model="editor.mode" type="radio" value="tracks"> Mis tracks
           </label>
-          <label :class="{ on: editor.mode === 'straight' }">
-            <input v-model="editor.mode" type="radio" value="straight"> Línea recta
+          <label :class="{ on: editor.mode === 'brouter' }" title="Por caminos y carreteras (BRouter)">
+            <input v-model="editor.mode" type="radio" value="brouter"> Caminos
+          </label>
+          <label :class="{ on: editor.mode === 'straight' }" title="Sin calcular: para trazar a mano">
+            <input v-model="editor.mode" type="radio" value="straight"> Recta
           </label>
         </div>
+        <label v-if="editor.mode === 'brouter'" class="profile">
+          Perfil
+          <select v-model="editor.profile">
+            <option v-for="p in BROUTER_PROFILES" :key="p.id" :value="p.id">{{ p.name }}</option>
+          </select>
+        </label>
 
         <div class="stats">
           <span><strong>{{ km(stats.distanceM) }}</strong></span>
@@ -105,6 +114,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
           <li><strong>Clic derecho en un punto</strong>: lo borra.</li>
           <li>Para cambiar solo un trozo: pon un punto al inicio y otro al final del trozo, y arrastra uno intermedio.</li>
         </ul>
+        <p class="credits">Caminos: <a href="https://brouter.de" target="_blank" rel="noopener">BRouter</a> · datos © OpenStreetMap</p>
       </div>
     </template>
   </section>
@@ -134,5 +144,9 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 .pending { color: #7c3aed; font-size: 12px; }
 .warn { margin: 0; font-size: 12px; color: #b45309; }
 .tools { display: flex; gap: 6px; flex-wrap: wrap; }
+.profile { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.profile select { flex: 1; padding: 4px 6px; }
+.credits { margin: 0; font-size: 11px; color: #9ca3af; }
+.credits a { color: inherit; }
 .help { margin: 0; padding-left: 18px; font-size: 12px; color: #4b5563; line-height: 1.6; }
 </style>
