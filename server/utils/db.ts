@@ -11,7 +11,7 @@ export function dataDir() {
 /** Dueño provisional de los datos importados antes de que hubiera usuarios. */
 export const LEGACY_USER = 0
 
-const SCHEMA_VERSION = 2
+const SCHEMA_VERSION = 3
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS users (
@@ -80,6 +80,19 @@ const SCHEMA = `
     reason TEXT,
     PRIMARY KEY (user_id, id)
   ) WITHOUT ROWID;
+
+  -- rutas planificadas: puntos de paso + tramos (JSON), ver app/utils/route.ts
+  CREATE TABLE IF NOT EXISTS routes (
+    user_id INTEGER NOT NULL,
+    id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    data TEXT NOT NULL,
+    distance_m REAL,
+    elevation_gain_m REAL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, id)
+  );
 
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,

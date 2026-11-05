@@ -4,7 +4,7 @@ import { cellKey, CELL_DEG, haversine, type DetailPoint } from './geo'
 // detalle parseado de las actividades de cada usuario, cacheado mientras no cambien sus datos
 const caches = new Map<number, { version: string, tracks: Map<string, DetailPoint[]> }>()
 
-function userTrack(userId: number, id: string): DetailPoint[] {
+export function userTrack(userId: number, id: string): DetailPoint[] {
   const version = dataVersion(userId)
   let cache = caches.get(userId)
   if (cache?.version !== version) caches.set(userId, cache = { version, tracks: new Map() })
