@@ -2,8 +2,17 @@
 import type { Activity } from '~/composables/useAtlas'
 import { km, meters, duration, date } from '~/utils/format'
 
-defineProps<{ activity: Activity, note?: string }>()
-const { state, toggle, focus, setColor } = useAtlas()
+const props = defineProps<{ activity: Activity, note?: string }>()
+const { state, toggle, focus, setColor, loadDetail } = useAtlas()
+const { editor, startFromTrack, close } = useRouteEditor()
+
+/** Abre el editor de rutas con esta actividad como punto de partida */
+async function toRoute() {
+  if (editor.active && !close()) return
+  const d = await loadDetail(props.activity.id)
+  startFromTrack(props.activity.name, d.detail.map(p => [p[0], p[1], p[2]]))
+  state.sidebarView = 'routes'
+}
 </script>
 
 <template>
@@ -26,6 +35,7 @@ const { state, toggle, focus, setColor } = useAtlas()
     </div>
     <div class="actions" @click.stop>
       <button title="Encuadrar" @click="focus([activity.id])">⌖</button>
+      <button title="Crear una ruta a partir de esta actividad" @click="toRoute">✎</button>
       <a :href="`https://www.strava.com/activities/${activity.id}`" target="_blank" rel="noopener" title="Abrir en Strava">↗</a>
     </div>
   </li>

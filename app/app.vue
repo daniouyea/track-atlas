@@ -2,6 +2,7 @@
 import { km } from '~/utils/format'
 
 const { state, filtered, zoneActive, years, types, byId, profileTracks, loadMe, syncStrava, loadActivities, clearSelection, focus, loadReferenceFile } = useAtlas()
+const routeEditor = useRouteEditor()
 const showImport = ref(false)
 const showCompare = ref(false)
 
@@ -45,6 +46,12 @@ function selectAllNear() {
       <header>
         <h1>Track Atlas</h1>
         <span class="actions">
+          <button
+            class="btn" :class="{ active: state.sidebarView === 'routes' }" title="Crear y editar rutas"
+            @click="state.sidebarView = state.sidebarView === 'routes' && !routeEditor.editor.active ? 'activities' : 'routes'"
+          >
+            Rutas
+          </button>
           <button class="btn" title="Comparar con una URL de Strava o un GPX" @click="showCompare = true">Comparar</button>
           <button class="btn" @click="showImport = true">Importar</button>
         </span>
@@ -67,6 +74,8 @@ function selectAllNear() {
         </template>
         <button class="link" title="Cerrar" @click="state.syncNotice = null">✕</button>
       </div>
+      <RoutesPanel v-if="state.sidebarView === 'routes'" />
+      <template v-else>
       <ComparePanel />
 
       <section v-if="state.near" class="near">
@@ -113,6 +122,7 @@ function selectAllNear() {
         <ActivityItem v-for="a in filtered" :key="a.id" :activity="a" />
         <li v-if="zoneActive && !filtered.length" class="empty">Ninguna actividad pasa por la zona del mapa.</li>
       </ul>
+      </template>
     </aside>
 
     <main
@@ -125,7 +135,10 @@ function selectAllNear() {
       <div v-if="profileTracks.length" class="profile-panel">
         <ElevationProfile />
       </div>
-      <div v-if="!state.near && !profileTracks.length && state.loaded && state.activities.length" class="tip">
+      <div v-if="routeEditor.editor.active && !routeEditor.doc.value?.waypoints.length" class="tip">
+        Haz clic en el mapa para poner el punto de salida
+      </div>
+      <div v-else-if="!routeEditor.editor.active && !state.near && !profileTracks.length && state.loaded && state.activities.length" class="tip">
         Clic en el mapa: ¿he pasado por aquí? · Clic en una actividad: superponer
       </div>
     </main>

@@ -15,13 +15,14 @@ onMounted(() => {
 onBeforeUnmount(() => ro?.disconnect())
 
 const tracks = computed(() => profileTracks.value
-  .map(t => ({ id: t.id, color: t.color, name: t.name, dashed: t.dashed, pts: t.detail.filter(p => p[2] != null) }))
+  // total: la distancia completa, aunque el final no tenga altitud (tramos en línea recta de una ruta)
+  .map(t => ({ id: t.id, color: t.color, name: t.name, dashed: t.dashed, total: t.detail.at(-1)?.[3] ?? 0, pts: t.detail.filter(p => p[2] != null) }))
   .filter(t => t.pts.length > 1))
 
 const domain = computed(() => {
   let maxD = 0, minE = Infinity, maxE = -Infinity
   for (const t of tracks.value) {
-    maxD = Math.max(maxD, t.pts.at(-1)![3])
+    maxD = Math.max(maxD, t.total)
     for (const p of t.pts) { minE = Math.min(minE, p[2]!); maxE = Math.max(maxE, p[2]!) }
   }
   const margin = Math.max(10, (maxE - minE) * 0.08)

@@ -3,6 +3,14 @@ import { km, meters } from '~/utils/format'
 
 // resultados de la comparación; la entrada (URL / fichero) está en CompareDialog
 const { state, byId, style, toggle, clearReference } = useAtlas()
+const routeEditor = useRouteEditor()
+
+function toRoute() {
+  const ref = state.reference
+  if (!ref || (routeEditor.editor.active && !routeEditor.close())) return
+  routeEditor.startFromTrack(ref.name, ref.detail.map(p => [p[0], p[1], p[2]]))
+  state.sidebarView = 'routes'
+}
 
 const SOURCES: Record<string, string> = {
   'file': 'Fichero',
@@ -52,6 +60,7 @@ function overlayTop(n: number) {
             </select>
           </label>
           <button v-if="matches.length" class="link" @click="overlayTop(3)">superponer las {{ Math.min(3, matches.length) }} más parecidas</button>
+          <button class="link" title="Abrir este track en el editor de rutas para modificarlo" @click="toRoute">crear ruta</button>
         </div>
       </template>
     </template>

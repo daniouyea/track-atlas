@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { Map as MlMap, NavigationControl, ScaleControl, GeolocateControl, LngLatBounds, setWorkerUrl, type GeoJSONSource, type StyleSpecification, type ExpressionSpecification } from 'maplibre-gl'
+import { Map as MlMap, NavigationControl, ScaleControl, GeolocateControl, LngLatBounds, setWorkerUrl, type GeoJSONSource, type StyleSpecification, type ExpressionSpecification, type MapMouseEvent } from 'maplibre-gl'
 // maplibre v6 resuelve su worker relativo a import.meta.url, que Vite rompe al empaquetar:
 // se le pasa explícitamente (el worker es autocontenido)
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import type { FeatureCollection } from 'geojson'
 import { basemaps } from '~/utils/basemaps'
 import type { DetailPoint } from '~/composables/useAtlas'
+import { ROUTE_COLOR } from '~/composables/useAtlas'
+import { routeCoords, type LngLat } from '~/utils/route'
 
 setWorkerUrl(workerUrl)
 
 const { state, details, filteredBase, tracks, style, profileTracks, searchNear } = useAtlas()
+const routeEditor = useRouteEditor()
 const el = ref<HTMLDivElement>()
 let map: MlMap | undefined
 
@@ -37,6 +40,8 @@ onMounted(() => {
     zoom: 6,
     attributionControl: { compact: true },
   })
+  // accesible desde la consola y las pruebas automáticas
+  ;(window as unknown as { __trackAtlasMap: MlMap }).__trackAtlasMap = map
   map.addControl(new NavigationControl({ visualizePitch: true }), 'top-right')
   map.addControl(new GeolocateControl({}), 'top-right')
   map.addControl(new ScaleControl({ unit: 'metric' }), 'bottom-left')
@@ -44,7 +49,11 @@ onMounted(() => {
 
   // al cambiar de mapa base se pierden las capas propias: se vuelven a añadir
   map.on('style.load', addOverlays)
-  map.on('click', e => searchNear(e.lngLat.lng, e.lngLat.lat))
+  map.on('click', (e) => {
+    if (routeEditor.editor.active) onEditorClick(e)
+    else searchNear(e.lngLat.lng, e.lngLat.lat)
+  })
+  setupRouteEditing(map)
   // zona encuadrada para el filtro de la lista: solo cuando la mueve el usuario. Si reaccionara a los
   // encuadres de la app (al pulsar una actividad), la lista cambiaría bajo el ratón. Se mira al empezar
   // el movimiento: al soltar un arrastre, la inercia termina sin originalEvent.
@@ -95,6 +104,23 @@ function addOverlays() {
   map.addLayer({ id: 'ref-casing', type: 'line', source: 'reference', layout: line, paint: { 'line-color': '#fff' } })
   map.addLayer({ id: 'ref-line', type: 'line', source: 'reference', layout: line, paint: {} })
 
+  // ruta en edición: tramos (discontinuos los de línea recta) y puntos de paso
+  map.addSource('route', { type: 'geojson', data: empty })
+  map.addSource('route-drag', { type: 'geojson', data: empty })
+  map.addSource('route-points', { type: 'geojson', data: empty })
+  map.addLayer({ id: 'route-casing', type: 'line', source: 'route', layout: line, paint: { 'line-color': '#fff', 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 6, 16, 11] } })
+  map.addLayer({ id: 'route-line', type: 'line', source: 'route', layout: line, filter: ['!=', ['get', 'mode'], 'straight'], paint: { 'line-color': ROUTE_COLOR, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3.5, 16, 7] } })
+  map.addLayer({ id: 'route-straight', type: 'line', source: 'route', filter: ['==', ['get', 'mode'], 'straight'], paint: { 'line-color': ROUTE_COLOR, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3, 16, 5], 'line-dasharray': [1.5, 1.5] } })
+  map.addLayer({ id: 'route-drag', type: 'line', source: 'route-drag', paint: { 'line-color': ROUTE_COLOR, 'line-width': 2, 'line-dasharray': [2, 2], 'line-opacity': 0.8 } })
+  map.addLayer({
+    id: 'route-points', type: 'circle', source: 'route-points',
+    paint: {
+      'circle-radius': ['match', ['get', 'role'], 'mid', 5.5, 7.5],
+      'circle-color': ['match', ['get', 'role'], 'first', '#16a34a', 'last', '#dc2626', '#fff'],
+      'circle-stroke-color': ROUTE_COLOR, 'circle-stroke-width': 2.5,
+    },
+  })
+
   map.addSource('hover', { type: 'geojson', data: empty })
   map.addLayer({
     id: 'hover', type: 'circle', source: 'hover',
@@ -107,6 +133,7 @@ function addOverlays() {
   updateReference()
   updateNear()
   updateHover()
+  updateRoute()
 }
 
 const ready = () => map?.getSource('selected') != null
@@ -240,6 +267,110 @@ function updateHover() {
   ;(map!.getSource('hover') as GeoJSONSource).setData({ type: 'FeatureCollection', features })
 }
 watch(() => state.hoverDistance, updateHover)
+
+// --- editor de rutas ---
+let dragIndex = -1
+let dragPos: LngLat | null = null
+
+const pointFeatures = (points: LngLat[]) => ({
+  type: 'FeatureCollection' as const,
+  features: points.map((p, i) => ({
+    type: 'Feature' as const,
+    properties: { i, role: i === 0 ? 'first' : i === points.length - 1 && points.length > 1 ? 'last' : 'mid' },
+    geometry: { type: 'Point' as const, coordinates: p },
+  })),
+})
+
+function updateRoute() {
+  if (!map?.getSource('route')) return
+  const d = routeEditor.editor.active ? routeEditor.doc.value : null
+  const points = d ? d.waypoints.map((p, i) => (i === dragIndex && dragPos ? dragPos : p)) : []
+  ;(map.getSource('route') as GeoJSONSource).setData({
+    type: 'FeatureCollection',
+    features: (d?.legs ?? []).map((l, i) => ({
+      type: 'Feature', properties: { i, mode: l.mode },
+      geometry: { type: 'LineString', coordinates: l.coords.map(c => [c[0], c[1]]) },
+    })),
+  })
+  ;(map.getSource('route-points') as GeoJSONSource).setData(pointFeatures(points))
+  // mientras se arrastra: líneas rectas provisionales a los puntos vecinos
+  const drag = d && dragPos
+    ? [d.waypoints[dragIndex - 1], d.waypoints[dragIndex + 1]].filter(Boolean).map(n => ({
+        type: 'Feature' as const, properties: {}, geometry: { type: 'LineString' as const, coordinates: [n!, dragPos!] },
+      }))
+    : []
+  ;(map.getSource('route-drag') as GeoJSONSource).setData({ type: 'FeatureCollection', features: drag })
+}
+// el shallowRef directamente (no un getter): así triggerRef también avisa cuando cambia por dentro
+watch([routeEditor.doc, () => routeEditor.editor.active], updateRoute)
+
+/** Elementos de una capa de la ruta bajo el ratón (con un margen para acertar fácil). */
+function hitRoute(e: MapMouseEvent, layers: string[]) {
+  const p = e.point, pad = 6
+  return map!.queryRenderedFeatures([[p.x - pad, p.y - pad], [p.x + pad, p.y + pad]], { layers })
+}
+
+function onEditorClick(e: MapMouseEvent) {
+  if (hitRoute(e, ['route-points']).length) return // los puntos se arrastran o se borran con clic derecho
+  const leg = hitRoute(e, ['route-line', 'route-straight'])[0]
+  if (leg) routeEditor.insertPoint(leg.properties.i as number, [e.lngLat.lng, e.lngLat.lat])
+  else routeEditor.addPoint([e.lngLat.lng, e.lngLat.lat])
+}
+
+function setupRouteEditing(m: MlMap) {
+  const canvas = m.getCanvas()
+  const onMove = (e: MapMouseEvent) => {
+    dragPos = [e.lngLat.lng, e.lngLat.lat]
+    updateRoute()
+  }
+  const onUp = () => {
+    m.off('mousemove', onMove)
+    m.dragPan.enable()
+    canvas.style.cursor = 'crosshair'
+    const i = dragIndex, p = dragPos
+    dragIndex = -1
+    dragPos = null
+    if (p) routeEditor.movePoint(i, p)
+    else updateRoute()
+  }
+  m.on('mousedown', 'route-points', (e) => {
+    if (!routeEditor.editor.active || e.originalEvent.button !== 0) return
+    e.preventDefault() // sin esto el mapa se desplazaría en vez de mover el punto
+    dragIndex = e.features![0]!.properties.i as number
+    m.dragPan.disable()
+    canvas.style.cursor = 'grabbing'
+    m.on('mousemove', onMove)
+    m.once('mouseup', onUp)
+  })
+  m.on('contextmenu', 'route-points', (e) => {
+    if (!routeEditor.editor.active) return
+    e.preventDefault()
+    routeEditor.removePoint(e.features![0]!.properties.i as number)
+  })
+  // cursor: mano sobre los puntos, «añadir» sobre la línea
+  m.on('mouseenter', 'route-points', () => { if (routeEditor.editor.active && dragIndex < 0) canvas.style.cursor = 'grab' })
+  m.on('mouseleave', 'route-points', () => { if (dragIndex < 0) canvas.style.cursor = 'crosshair' })
+  for (const layer of ['route-line', 'route-straight']) {
+    m.on('mouseenter', layer, () => { if (routeEditor.editor.active && dragIndex < 0) canvas.style.cursor = 'copy' })
+    m.on('mouseleave', layer, () => { if (dragIndex < 0) canvas.style.cursor = 'crosshair' })
+  }
+}
+
+// al editar, el doble clic no hace zoom (sería añadir dos puntos)
+watch(() => routeEditor.editor.active, (on) => {
+  if (!map) return
+  if (on) map.doubleClickZoom.disable()
+  else map.doubleClickZoom.enable()
+})
+
+// al abrir una ruta (guardada o desde un track) se encuadra
+watch(() => routeEditor.doc.value?.id, () => {
+  const d = routeEditor.doc.value
+  if (!d?.legs.length) return
+  const b = new LngLatBounds()
+  for (const c of routeCoords(d)) b.extend([c[0], c[1]])
+  map?.fitBounds(b, { padding: { top: 60, left: 60, right: 60, bottom: 220 }, maxZoom: 15, duration: 600 })
+})
 
 watch(() => state.basemap, id => map && setBasemap(id))
 </script>

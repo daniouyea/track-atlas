@@ -1,6 +1,8 @@
 import { reactive, computed, shallowReactive, shallowRef, watch } from 'vue'
 import type { FeatureCollection, LineString } from 'geojson'
 import { lineCrosses, type Bounds } from '~/utils/viewport'
+import { routeProfile } from '~/utils/route'
+import { useRouteEditor } from './useRouteEditor'
 import { PALETTE } from '~/utils/format'
 import { defaultStyle, type TrackStyle } from '~/utils/styles'
 
@@ -68,6 +70,9 @@ export interface SyncResult {
 export interface ProfileTrack { id: string, name: string, color: string, detail: DetailPoint[], dashed?: boolean }
 
 export const REF_ID = '__ref'
+export const ROUTE_ID = '__route'
+/** color de la ruta en edición (violeta: no se confunde con los de selección ni con la comparación) */
+export const ROUTE_COLOR = '#7c3aed'
 const STYLE_KEY = 'track-atlas:styles'
 const PREFS_KEY = 'track-atlas:prefs'
 
@@ -83,6 +88,8 @@ function loadJson<T>(key: string, fallback: T): T {
 const prefs = loadJson(PREFS_KEY, { basemap: 'liberty', showHeat: true, nearRadius: 100, compareTolerance: 30, inView: false })
 
 const state = reactive({
+  /** qué muestra la barra lateral */
+  sidebarView: 'activities' as 'activities' | 'routes',
   /** null: sin sesión; undefined: aún comprobando */
   user: undefined as User | null | undefined,
   /** resultado de la última sincronización con Strava, para avisar al usuario */
@@ -235,6 +242,8 @@ const profileTracks = computed<ProfileTrack[]>(() => {
     .filter(id => details[id])
     .map(id => ({ id, name: details[id]!.name, color: state.colors[id]!, detail: details[id]!.detail }))
   if (state.reference) tracks.unshift({ id: REF_ID, name: state.reference.name, color: '#111', detail: state.reference.detail, dashed: true })
+  const { editor, doc } = useRouteEditor()
+  if (editor.active && doc.value?.legs.length) tracks.unshift({ id: ROUTE_ID, name: doc.value.name, color: ROUTE_COLOR, detail: routeProfile(doc.value) })
   return tracks
 })
 

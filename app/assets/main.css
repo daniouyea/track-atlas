@@ -17,8 +17,9 @@ input[type="search"], select { padding: 5px 8px; border: 1px solid #d1d5db; bord
 .layout { display: grid; grid-template-columns: 380px 1fr; height: 100vh; }
 .sidebar { display: flex; flex-direction: column; border-right: 1px solid #e5e7eb; min-height: 0; background: #fff; }
 .sidebar header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid #e5e7eb; }
-.sidebar h1 { margin: 0; font-size: 17px; color: #fc4c02; }
-.sidebar header .actions { display: flex; gap: 6px; }
+.sidebar h1 { margin: 0; font-size: 17px; color: #fc4c02; white-space: nowrap; }
+.sidebar header .actions { display: flex; gap: 4px; }
+.sidebar header .btn { padding: 5px 9px; }
 .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid #f1f1f1; }
 .filters input[type="search"] { flex: 1; min-width: 140px; }
 .filters .in-view { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #374151; flex-basis: 60%; }
