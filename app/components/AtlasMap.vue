@@ -66,7 +66,17 @@ onMounted(() => {
   setBasemap(state.basemap)
 })
 
-onBeforeUnmount(() => map?.remove())
+// el mapa solo se reajusta solo con la ventana: al plegar la barra lateral cambia su contenedor
+let resizeObserver: ResizeObserver | undefined
+onMounted(() => {
+  resizeObserver = new ResizeObserver(() => map?.resize())
+  resizeObserver.observe(el.value!)
+})
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+  map?.remove()
+})
 
 function currentBounds(): [number, number, number, number] {
   const b = map!.getBounds()

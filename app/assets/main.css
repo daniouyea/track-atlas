@@ -15,6 +15,18 @@ input[type="search"], select { padding: 5px 8px; border: 1px solid #d1d5db; bord
 .link:hover { text-decoration: underline; }
 
 .layout { display: grid; grid-template-columns: 380px 1fr; height: 100vh; }
+.layout.collapsed { grid-template-columns: 52px 1fr; }
+.sidebar header .collapse { display: grid; place-items: center; border: 0; background: none; color: #6b7280; cursor: pointer; padding: 4px; border-radius: 6px; }
+.sidebar header .collapse:hover { background: #f3f4f6; color: #111; }
+.rail { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 0; border-right: 1px solid #e5e7eb; background: #fff; }
+.rail hr { width: 28px; border: 0; border-top: 1px solid #e5e7eb; margin: 4px 0; }
+.rail-btn { position: relative; display: grid; place-items: center; width: 38px; height: 38px; border: 0; border-radius: 8px; background: none; color: #4b5563; cursor: pointer; }
+.rail-btn:hover { background: #f3f4f6; color: #111; }
+.rail-btn.on { color: #fc4c02; background: #fff1ea; }
+.rail-btn .dot { position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: #7c3aed; }
+.rail-btn.avatar { margin-top: auto; }
+.rail-btn.avatar img { width: 28px; height: 28px; border-radius: 50%; }
+.rail-btn.avatar span { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: #fc4c02; color: #fff; font-weight: 600; }
 .sidebar { display: flex; flex-direction: column; border-right: 1px solid #e5e7eb; min-height: 0; background: #fff; }
 .sidebar header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid #e5e7eb; }
 .sidebar h1 { margin: 0; font-size: 17px; color: #fc4c02; white-space: nowrap; }

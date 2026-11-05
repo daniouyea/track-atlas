@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Activity, Route as RouteIcon, Upload, GitCompare } from 'lucide-vue-next'
+import { Activity, Route as RouteIcon, Upload, GitCompare, PanelLeftClose, PanelLeftOpen } from 'lucide-vue-next'
 import { km } from '~/utils/format'
 
 const { state, filtered, zoneActive, years, types, byId, profileTracks, loadMe, syncStrava, loadActivities, clearSelection, focus, loadReferenceFile } = useAtlas()
@@ -42,10 +42,37 @@ function selectAllNear() {
 <template>
   <div v-if="state.user === undefined" />
   <LoginScreen v-else-if="!state.user" :strava-configured="state.stravaConfigured" />
-  <div v-else class="layout">
-    <aside class="sidebar">
+  <div v-else class="layout" :class="{ collapsed: state.sidebarCollapsed }">
+    <!-- barra plegada: franja de iconos; cada uno despliega la barra en su pestaña -->
+    <aside v-if="state.sidebarCollapsed" class="rail">
+      <button class="rail-btn" title="Desplegar la barra lateral" @click="state.sidebarCollapsed = false"><PanelLeftOpen :size="18" /></button>
+      <hr>
+      <button
+        class="rail-btn" :class="{ on: state.sidebarView === 'activities' }" title="Actividades"
+        @click="state.sidebarView = 'activities'; state.sidebarCollapsed = false"
+      >
+        <Activity :size="18" />
+      </button>
+      <button
+        class="rail-btn" :class="{ on: state.sidebarView === 'routes' }" title="Rutas planificadas"
+        @click="state.sidebarView = 'routes'; state.sidebarCollapsed = false"
+      >
+        <RouteIcon :size="18" />
+        <span v-if="routeEditor.editor.active" class="dot" />
+      </button>
+      <hr>
+      <button class="rail-btn" title="Importar" @click="showImport = true"><Upload :size="18" /></button>
+      <button class="rail-btn" title="Comparar con un track" @click="showCompare = true"><GitCompare :size="18" /></button>
+      <button class="rail-btn avatar" :title="[state.user.firstname, state.user.lastname].filter(Boolean).join(' ')" @click="state.sidebarCollapsed = false">
+        <img v-if="state.user.avatar" :src="state.user.avatar" alt="">
+        <span v-else>{{ (state.user.firstname ?? '?').charAt(0) }}</span>
+      </button>
+    </aside>
+
+    <aside v-else class="sidebar">
       <header>
         <h1>Track Atlas</h1>
+        <button class="collapse" title="Plegar la barra lateral" @click="state.sidebarCollapsed = true"><PanelLeftClose :size="18" /></button>
       </header>
       <UserMenu />
 

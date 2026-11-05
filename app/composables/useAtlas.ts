@@ -85,11 +85,13 @@ function loadJson<T>(key: string, fallback: T): T {
 }
 
 // preferencias que se recuerdan entre visitas
-const prefs = loadJson(PREFS_KEY, { basemap: 'liberty', showHeat: true, nearRadius: 100, compareTolerance: 30, inView: false })
+const prefs = loadJson(PREFS_KEY, { basemap: 'liberty', showHeat: true, nearRadius: 100, compareTolerance: 30, inView: false, sidebarCollapsed: false })
 
 const state = reactive({
   /** qué muestra la barra lateral */
   sidebarView: 'activities' as 'activities' | 'routes',
+  /** barra lateral plegada a una franja de iconos */
+  sidebarCollapsed: prefs.sidebarCollapsed,
   /** null: sin sesión; undefined: aún comprobando */
   user: undefined as User | null | undefined,
   /** resultado de la última sincronización con Strava, para avisar al usuario */
@@ -126,7 +128,7 @@ const state = reactive({
 
 watch(() => state.styleOverrides, v => localStorage.setItem(STYLE_KEY, JSON.stringify(v)), { deep: true })
 watch(
-  () => ({ basemap: state.basemap, showHeat: state.showHeat, nearRadius: state.nearRadius, compareTolerance: state.compareTolerance, inView: state.filters.inView }),
+  () => ({ basemap: state.basemap, showHeat: state.showHeat, nearRadius: state.nearRadius, compareTolerance: state.compareTolerance, inView: state.filters.inView, sidebarCollapsed: state.sidebarCollapsed }),
   v => localStorage.setItem(PREFS_KEY, JSON.stringify(v)),
 )
 
