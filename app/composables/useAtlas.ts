@@ -71,8 +71,8 @@ export interface ProfileTrack { id: string, name: string, color: string, detail:
 
 export const REF_ID = '__ref'
 export const ROUTE_ID = '__route'
-/** color de la ruta en edición (violeta: no se confunde con los de selección ni con la comparación) */
-export const ROUTE_COLOR = '#7c3aed'
+/** color de la ruta en edición (verde esmeralda: contrasta con el azul de la primera selección y con los cálidos de los mapas) */
+export const ROUTE_COLOR = '#059669'
 const STYLE_KEY = 'track-atlas:styles'
 const PREFS_KEY = 'track-atlas:prefs'
 
@@ -115,6 +115,8 @@ const state = reactive({
   near: null as null | { lng: number, lat: number, r: number, results: NearResult[], loading: boolean },
   /** punto resaltado desde el perfil de elevación: distancia recorrida (m) */
   hoverDistance: null as number | null,
+  /** actividad bajo el cursor en la lista: se resalta en el mapa */
+  hoverActivity: null as string | null,
   /** petición de encuadre para el mapa */
   fitRequest: null as null | { bboxes: BBox[] },
   reference: null as RefTrack | null,
@@ -321,7 +323,7 @@ async function afterImport() {
 
 export function useAtlas() {
   return {
-    state, details, byId, filtered, filteredBase, zoneActive, tracks, years, types, style, profileTracks,
+    state, details, byId, filtered, filteredBase, zoneActive, tracks, trackById, years, types, style, profileTracks,
     loadMe, logout, syncStrava, loadActivities, loadDetail, toggle, focus, setColor, clearSelection, searchNear, afterImport,
     setStyle, resetStyle, loadReferenceUrl, loadReferenceFile, runComparison, clearReference,
   }

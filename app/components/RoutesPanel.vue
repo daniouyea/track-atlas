@@ -114,7 +114,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKey))
 .stats div { display: flex; flex-direction: column; background: #f9fafb; border-radius: 6px; padding: 6px 8px; }
 .stats strong { font-size: 16px; }
 .stats span { font-size: 11px; color: #6b7280; }
-.pending { margin: 0; color: #7c3aed; font-size: 12px; }
+.pending { margin: 0; color: #059669; font-size: 12px; }
 .warn { margin: 0; font-size: 12px; color: #b45309; }
 .tools { display: flex; gap: 6px; flex-wrap: wrap; }
 .help { margin: 0; padding-left: 18px; font-size: 12px; color: #4b5563; line-height: 1.6; }

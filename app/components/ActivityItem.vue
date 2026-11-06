@@ -6,6 +6,9 @@ const props = defineProps<{ activity: Activity, note?: string }>()
 const { state, toggle, focus, setColor, loadDetail } = useAtlas()
 const { editor, startFromTrack, close } = useRouteEditor()
 
+// si el elemento desaparece de la lista con el cursor encima, no queda resaltado en el mapa
+onBeforeUnmount(() => { if (state.hoverActivity === props.activity.id) state.hoverActivity = null })
+
 /** Abre el editor de rutas con esta actividad como punto de partida */
 async function toRoute() {
   if (editor.active && !close()) return
@@ -20,6 +23,8 @@ async function toRoute() {
     class="item" :class="{ selected: state.selected.includes(activity.id) }"
     :style="{ '--c': state.colors[activity.id] }"
     @click="toggle(activity.id)"
+    @mouseenter="state.hoverActivity = activity.id"
+    @mouseleave="state.hoverActivity === activity.id && (state.hoverActivity = null)"
   >
     <!-- seleccionada: el punto abre el selector de color -->
     <label v-if="state.selected.includes(activity.id)" class="swatch" title="Cambiar color" @click.stop>

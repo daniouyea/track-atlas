@@ -11,7 +11,7 @@ import { routeCoords, type LngLat } from '~/utils/route'
 
 setWorkerUrl(workerUrl)
 
-const { state, details, filteredBase, tracks, style, profileTracks, searchNear } = useAtlas()
+const { state, details, filteredBase, tracks, trackById, style, profileTracks, searchNear } = useAtlas()
 const routeEditor = useRouteEditor()
 const el = ref<HTMLDivElement>()
 let map: MlMap | undefined
@@ -109,6 +109,11 @@ function addOverlays() {
   map.addLayer({ id: 'sel-casing', type: 'line', source: 'selected', layout: line, paint: { 'line-color': '#fff', 'line-opacity': 0.9 } })
   map.addLayer({ id: 'sel-line', type: 'line', source: 'selected', layout: line, paint: { 'line-color': ['get', 'color'] } })
 
+  // actividad bajo el cursor en la lista
+  map.addSource('highlight', { type: 'geojson', data: empty })
+  map.addLayer({ id: 'hl-casing', type: 'line', source: 'highlight', layout: line, paint: { 'line-color': '#fff', 'line-opacity': 0.95, 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 7, 16, 13] } })
+  map.addLayer({ id: 'hl-line', type: 'line', source: 'highlight', layout: line, paint: { 'line-color': ['get', 'color'], 'line-width': ['interpolate', ['linear'], ['zoom'], 8, 3.5, 16, 7] } })
+
   // track de referencia: verde lo ya recorrido, otro color lo nuevo (gris mientras se analiza)
   map.addSource('reference', { type: 'geojson', data: empty })
   map.addLayer({ id: 'ref-casing', type: 'line', source: 'reference', layout: line, paint: { 'line-color': '#fff' } })
@@ -140,6 +145,7 @@ function addOverlays() {
   applyStyle()
   updateHeat()
   updateSelected()
+  updateHighlight()
   updateReference()
   updateNear()
   updateHover()
@@ -200,6 +206,19 @@ function updateSelected() {
   ;(map!.getSource('selected') as GeoJSONSource).setData({ type: 'FeatureCollection', features })
 }
 watch([() => [...state.selected], () => Object.keys(details).length, () => ({ ...state.colors })], updateSelected)
+
+// --- actividad resaltada desde la lista ---
+const HIGHLIGHT_COLOR = '#2563eb'
+function updateHighlight() {
+  if (!ready()) return
+  const id = state.hoverActivity
+  // el detalle si ya está cargado; si no, la traza simplificada del heatmap
+  const coords = id ? details[id]?.detail.map(p => [p[0], p[1]]) ?? trackById.value.get(id) : undefined
+  ;(map!.getSource('highlight') as GeoJSONSource).setData(id && coords
+    ? { type: 'Feature', properties: { color: state.colors[id] ?? HIGHLIGHT_COLOR }, geometry: { type: 'LineString', coordinates: coords } }
+    : empty)
+}
+watch([() => state.hoverActivity, trackById], updateHighlight)
 
 // --- track de referencia ---
 function updateReference() {
